@@ -1,0 +1,16 @@
+# AgentWorld-35B-A3B — 3-way decode decomposition, Intel Arc Pro B70, Q5_K_M, f16 KV, 2026-07-01
+# upstream = mainline llama.cpp, default flags (DNN on, -b 2048 -ub 512)
+# up_flags = mainline llama.cpp, Turbo flags (GGML_SYCL_DISABLE_DNN=1, -b 8192 -ub 4096)
+# turbo    = fork (+3 unmerged fusion commits), Turbo flags
+# config_win = up_flags/upstream · code_win = turbo/up_flags · whole_win = turbo/upstream
+# source: qworld_turbo/results/THREEWAY_F16_B70.md, ## AgentWorld-35B-A3B, Decode t/s vs context depth
+
+## decode t/s vs context depth (single stream)
+context_tok	upstream	up_flags	turbo	config_win	code_win	whole_win
+805	81.7	81.7	93.6	1.00	1.14	1.15
+3313	80.0	79.8	91.3	1.00	1.14	1.14
+6963	77.5	77.4	88.3	1.00	1.14	1.14
+14563	73.0	72.7	82.3	1.00	1.13	1.13
+29713	66.6	66.1	74.1	0.99	1.12	1.11
+61341	55.7	55.5	61.0	1.00	1.10	1.10
+129325	41.5	41.3	44.3	1.00	1.07	1.07

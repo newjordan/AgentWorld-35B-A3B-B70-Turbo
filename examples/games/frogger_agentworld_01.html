@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frogger - Browser Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #111;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Courier New', Courier, monospace;
+            overflow: hidden;
+        }
+        canvas {
+            border: 4px solid #444;
+            background-color: #000;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.2);
+        }
+    </style>
+</head>
+<body>
+<canvas id="gameCanvas" width="600" height="700"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// Game Constants
+const GRID_SIZE = 50;
+const COLS = 12;
+const ROWS = 14;
+const CANVAS_WIDTH = COLS * GRID_SIZE;
+const CANVAS_HEIGHT = ROWS * GRID_SIZE;
+
+// Colors
+const COLORS = {
+    background: '#000',
+    road: '#222',
+    water: '#004488',
+    grass: '#006600',
+    frog: '#00FF00',
+    frogEye: '#FFFFFF',
+    car1: '#FF0000',
+    car2: '#FFFF00',
+    car3: '#00FFFF',
+    log: '#8B4513',
+    turtle: '#00AA00',
+    goal: '#FFFFFF',
+    text: '#FFFFFF',
+    hud: '#FFFF00'
+};
+
+// Game State
+const STATES = {
+    MENU: 0,
+    PLAYING: 1,
+    GAME_OVER: 2,
+    VICTORY: 3
+};
+
+let currentState = STATES.MENU;
+let score = 0;
+let lives = 3;
+let currentLevel = 1;
+let frameCount = 0;
+
+// Frog Object
+const frog = {
+    x: 6 * GRID_SIZE,
+    y: 13 * GRID_SIZE,
+    width: GRID_SIZE - 10,
+    height: GRID_SIZE - 10,
+    dx: 0,
+    dy: 0,
+    speed: GRID_SIZE,
+    onLog: null,
+    isDead: false
+};
+
+// Entities
+let cars = [];
+let logs = [];
+let turtles = [];
+
+// Level Configurations
+const LEVELS = {
+    1: {
+        roadSpeed: 3,
+        roadDensity: 0.6,
+        riverSpeed: 2,
+        riverDensity: 0.5,
+        logCount: 4,
+        turtleCount: 3
+    },
+    2: {
+        roadSpeed: 5,
+        roadDensity: 0.8,
+        riverSpeed: 3.5,
+        riverDensity: 0.7,
+        logCount: 5,
+        turtleCount: 4
+    }
+};
+
+// Input Handling
+const keys = {};
+document.addEventListener('keydown', (e) => {
+    keys[e.key] = true;
+    
+    if (currentState === STATES.MENU && e.key === 'Enter') {
+        startGame();
+    } else if (currentState === STATES.GAME_OVER && e.key === 'Enter') {
+        resetGame();
+    } else if (currentState === STATES.VICTORY && e.key === 'Enter') {
+        resetGame();
+    } else if (currentState === STATES.PLAYING) {
+        handleMovement(e.key);
+    }
+});
+
+document.addEventListener('keyup', (e) => {
+    keys[e.key] = false;
+});
+
+function handleMovement(key) {
+    if (frog.isDead) return;
+    
+    switch(key) {
+        case 'ArrowUp':
+            frog.dy = -frog.speed;
+            frog.dx = 0;
+            break;
+        case 'ArrowDown':
+            frog.dy = frog.speed;
+            frog.dx = 0;
+            break;
+        case 'ArrowLeft':
+            frog.dx = -frog.speed;
+            frog.dy = 0;
+            break;
+        case 'ArrowRight':
+            frog.dx = frog.speed;
+            frog.dy = 0;
+            break;
+    }
+    
+    // Clamp frog position to grid
+    frog.x = Math.round(frog.x / GRID_SIZE) * GRID_SIZE;
+    frog.y = Math.round(frog.y / GRID_SIZE) * GRID_SIZE;
+}
+
+function startGame() {
+    currentState = STATES.PLAYING;
+    score = 0;
+    lives = 3;
+    currentLevel = 1;
+    resetLevel();
+}
+
+function resetGame() {
+    currentState = STATES.MENU;
+    score = 0;
+    lives = 3;
+    currentLevel = 1;
+}
+
+function resetLevel() {
+    frog.x = 6 * GRID_SIZE;
+    frog.y = 13 * GRID_SIZE;
+    frog.isDead = false;
+    frog.onLog = null;
+    
+    cars = [];
+    logs = [];
+    turtles = [];
+    
+    const config = LEVELS[currentLevel];
+    
+    // Generate Cars
+    const roadRows = [11, 10, 9, 8, 7, 6];
+    roadRows.forEach((row, index) => {
+        const speed = (index % 2 === 0 ? 1 : -1) * (config.roadSpeed + (index % 3));
+        const color = index % 3 === 0 ? COLORS.car1 : (index % 3 === 1 ? COLORS.car2 : COLORS.car3);
+        const width = GRID_SIZE * (index % 2 === 0 ? 1 : 2);
+        
+        for (let i = 0; i < 3; i++) {
+            cars.push({
+                x: Math.random() * CANVAS_WIDTH,
+                y: row * GRID_SIZE,
+                width: width,
+                height: GRID_SIZE - 10,
+                speed: speed,
+                color: color
+            });
+        }
+    });
+    
+    // Generate Logs and Turtles
+    const riverRows = [5, 4, 3, 2, 1];
+    riverRows.forEach((row, index) => {
+        const speed = (index % 2 === 0 ? -1 : 1) * (config.riverSpeed + (index % 2));
+        
+        if (row % 2 === 1) { // Logs
+            for (let i = 0; i < config.logCount; i++) {
+                logs.push({
+                    x: Math.random() * CANVAS_WIDTH,
+                    y: row * GRID_SIZE,
+                    width: GRID_SIZE * (2 + Math.floor(Math.random() * 2)),
+                    height: GRID_SIZE - 10,
+                    speed: speed,
+                    color: COLORS.log
+                });
+            }
+        } else { // Turtles
+            for (let i = 0; i < config.turtleCount; i++) {
+                turtles.push({
+                    x: Math.random() * CANVAS_WIDTH,
+                    y: row * GRID_SIZE,
+                    width: GRID_SIZE * 1.5,
+                    height: GRID_SIZE - 10,
+                    speed: speed,
+                    color: COLORS.turtle
+                });
+            }
+        }
+    });
+}
+
+function update() {
+    if (currentState !== STATES.PLAYING) return;
+    
+    frameCount++;
+    
+    // Update Frog Position
+    if (!frog.isDead) {
+        frog.x += frog.dx;
+        frog.y += frog.dy;
+        
+        // Wrap around horizontally
+        if (frog.x < 0) frog.x = CANVAS_WIDTH - GRID_SIZE;
+        if (frog.x >= CANVAS_WIDTH) frog.x = 0;
+        
+        // Check if reached goal
+        if (frog.y < GRID_SIZE) {
+            score += 100;
+            if (currentLevel === 1) {
+                currentLevel = 2;
+                resetLevel();
+            } else {
+                currentState = STATES.VICTORY;
+            }
+            return;
+        }
+        
+        // Check water collision
+        if (frog.y >= 1 && frog.y <= 5) {
+            let onSafeObject = false;
+            
+            // Check logs
+            logs.forEach(log => {
+                if (checkCollision(frog, log)) {
+                    onSafeObject = true;
+                    frog.onLog = log;
+                }
+            });
+            
+            // Check turtles
+            turtles.forEach(turtle => {
+                if (checkCollision(frog, turtle)) {
+                    onSafeObject = true;
+                    frog.onLog = turtle;
+                }
+            });
+            
+            if (!onSafeObject) {
+                loseLife();
+            }
+        } else {
+            frog.onLog = null;
+        }
+        
+        // Move with log/turtle
+        if (frog.onLog) {
+            frog.x += frog.onLog.speed;
+            
+            // Check if frog fell off log/turtle
+            if (frog.x < -frog.width || frog.x > CANVAS_WIDTH) {
+                loseLife();
+            }
+        }
+    }
+    
+    // Update Cars
+    cars.forEach(car => {
+        car.x += car.speed;
+        if (car.speed > 0 && car.x > CANVAS_WIDTH) {
+            car.x = -car.width;
+        } else if (car.speed < 0 && car.x + car.width < 0) {
+            car.x = CANVAS_WIDTH;
+        }
+        
+        // Collision with frog
+        if (!frog.isDead && checkCollision(frog, car)) {
+            loseLife();
+        }
+    });
+    
+    // Update Logs
+    logs.forEach(log => {
+        log.x += log.speed;
+        if (log.speed > 0 && log.x > CANVAS_WIDTH) {
+            log.x = -log.width;
+        } else if (log.speed < 0 && log.x + log.width < 0) {
+            log.x = CANVAS_WIDTH;
+        }
+    });
+    
+    // Update Turtles
+    turtles.forEach(turtle => {
+        turtle.x += turtle.speed;
+        if (turtle.speed > 0 && turtle.x > CANVAS_WIDTH) {
+            turtle.x = -turtle.width;
+        } else if (turtle.speed < 0 && turtle.x + turtle.width < 0) {
+            turtle.x = CANVAS_WIDTH;
+        }
+    });
+}
+
+function checkCollision(rect1, rect2) {
+    return rect1.x < rect2.x + rect2.width &&
+           rect1.x + rect1.width > rect2.x &&
+           rect1.y < rect2.y + rect2.height &&
+           rect1.y + rect1.height > rect2.y;
+}
+
+function loseLife() {
+    frog.isDead = true;
+    lives--;
+    
+    if (lives <= 0) {
+        currentState = STATES.GAME_OVER;
+    } else {
+        setTimeout(() => {
+            frog.x = 6 * GRID_SIZE;
+            frog.y = 13 * GRID_SIZE;
+            frog.isDead = false;
+            frog.onLog = null;
+            frog.dx = 0;
+            frog.dy = 0;
+        }, 1000);
+    }
+}
+
+function draw() {
+    // Clear canvas
+    ctx.fillStyle = COLORS.background;
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    
+    // Draw background zones
+    // Goal zone
+    ctx.fillStyle = COLORS.grass;
+    ctx.fillRect(0, 0, CANVAS_WIDTH, GRID_SIZE);
+    
+    // Road zone
+    ctx.fillStyle = COLORS.road;
+    ctx.fillRect(0, GRID_SIZE * 6, CANVAS_WIDTH, GRID_SIZE * 5);
+    
+    // Water zone
+    ctx.fillStyle = COLORS.water;
+    ctx.fillRect(0, GRID_SIZE * 1, CANVAS_WIDTH, GRID_SIZE * 5);
+    
+    // Start zone
+    ctx.fillStyle = COLORS.grass;
+    ctx.fillRect(0, GRID_SIZE * 13, CANVAS_WIDTH, GRID_SIZE);
+    
+    // Draw Goal Slots
+    ctx.fillStyle = COLORS.goal;
+    for (let i = 0; i < 5; i++) {
+        ctx.fillRect(i * GRID_SIZE * 2 + GRID_SIZE, GRID_SIZE, GRID_SIZE - 10, GRID_SIZE - 10);
+    }
+    
+    // Draw Logs
+    logs.forEach(log => {
+        ctx.fillStyle = log.color;
+        ctx.fillRect(log.x, log.y + 5, log.width, log.height);
+        // Log details
+        ctx.fillStyle = '#654321';
+        ctx.fillRect(log.x + 5, log.y + 10, log.width - 10, 5);
+        ctx.fillRect(log.x + 5, log.y + 30, log.width - 10, 5);
+    });
+    
+    // Draw Turtles
+    turtles.forEach(turtle => {
+        ctx.fillStyle = turtle.color;
+        ctx.beginPath();
+        ctx.ellipse(turtle.x + turtle.width/2, turtle.y + turtle.height/2 + 5, turtle.width/2, turtle.height/2, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Turtle shell pattern
+        ctx.fillStyle = '#005500';
+        ctx.beginPath();
+        ctx.arc(turtle.x + turtle.width/2, turtle.y + turtle.height/2 + 5, turtle.width/4, 0, Math.PI * 2);
+        ctx.fill();
+    });
+    
+    // Draw Cars
+    cars.forEach(car => {
+        ctx.fillStyle = car.color;
+        ctx.fillRect(car.x, car.y + 5, car.width, car.height);
+        // Car details
+        ctx.fillStyle = '#000';
+        ctx.fillRect(car.x + 5, car.y + 15, 10, 10);
+        ctx.fillRect(car.x + car.width - 15, car.y + 15, 10, 10);
+    });
+    
+    // Draw Frog
+    if (!frog.isDead || Math.floor(frameCount / 10) % 2 === 0) {
+        ctx.fillStyle = COLORS.frog;
+        ctx.fillRect(frog.x + 5, frog.y + 5, frog.width, frog.height);
+        
+        // Frog eyes
+        ctx.fillStyle = COLORS.frogEye;
+        ctx.fillRect(frog.x + 10, frog.y + 10, 8, 8);
+        ctx.fillRect(frog.x + frog.width - 18, frog.y + 10, 8, 8);
+        
+        // Frog pupils
+        ctx.fillStyle = '#000';
+        ctx.fillRect(frog.x + 12, frog.y + 12, 4, 4);
+        ctx.fillRect(frog.x + frog.width - 16, frog.y + 12, 4, 4);
+    }
+    
+    // Draw HUD
+    ctx.fillStyle = COLORS.hud;
+    ctx.font = '20px Courier New';
+    ctx.fillText(`SCORE: ${score}`, 10, 30);
+    ctx.fillText(`LIVES: ${lives}`, 10, 60);
+    ctx.fillText(`LEVEL: ${currentLevel}`, 10, 90);
+    
+    // Draw Menus and Overlays
+    if (currentState === STATES.MENU) {
+        drawMenuScreen();
+    } else if (currentState === STATES.GAME_OVER) {
+        drawGameOverScreen();
+    } else if (currentState === STATES.VICTORY) {
+        drawVictoryScreen();
+    }
+}
+
+function drawMenuScreen() {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    
+    ctx.fillStyle = COLORS.frog;
+    ctx.font = 'bold 40px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('FROGGER', CANVAS_WIDTH/2, CANVAS_HEIGHT/2 - 100);
+    
+    ctx.fillStyle = COLORS.text;
+    ctx.font = '20px Courier New';
+    ctx.fillText('Use Arrow Keys to Move', CANVAS_WIDTH/2, CANVAS_HEIGHT/2 - 40);
+    ctx.fillText('Dodge Cars on the Road', CANVAS_WIDTH/2, CANVAS_HEIGHT/2);
+    ctx.fillText('Ride Logs and Turtles across the River', CANVAS_WIDTH/2, CANVAS_HEIGHT/2 + 40);
+    ctx.fillText('Reach the Top to Score!', CANVAS_WIDTH/2, CANVAS_HEIGHT/2 + 80);
+    
+    ctx.fillStyle = COLORS.hud;
+    ctx.font = 'bold 24px Courier New';
+    ctx.fillText('Press ENTER to Start', CANVAS_WIDTH/2, CANVAS_HEIGHT/2 + 150);
+}
+
+function drawGameOverScreen() {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    
+    ctx.fillStyle = '#FF0000';
+    ctx.font = 'bold 40px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('GAME OVER', CANVAS_WIDTH/2, CANVAS_HEIGHT/2 - 50);
+    
+    ctx.fillStyle = COLORS.text;
+    ctx.font = '24px Courier New';
+    ctx.fillText(`Final Score: ${score}`, CANVAS_WIDTH/2, CANVAS_HEIGHT/2 + 20);
+    
+    ctx.fillStyle = COLORS.hud;
+    ctx.font = '20px Courier New';
+    ctx.fillText('Press ENTER to Restart', CANVAS_WIDTH/2, CANVAS_HEIGHT/2 + 100);
+}
+
+function drawVictoryScreen() {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    
+    ctx.fillStyle = COLORS.frog;
+    ctx.font = 'bold 40px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('VICTORY!', CANVAS_WIDTH/2, CANVAS_HEIGHT/2 - 50);
+    
+    ctx.fillStyle = COLORS.text;
+    ctx.font = '24px Courier New';
+    ctx.fillText(`Final Score: ${score}`, CANVAS_WIDTH/2, CANVAS_HEIGHT/2 + 20);
+    
+    ctx.fillStyle = COLORS.hud;
+    ctx.font = '20px Courier New';
+    ctx.fillText('Press ENTER to Play Again', CANVAS_WIDTH/2, CANVAS_HEIGHT/2 + 100);
+}
+
+function gameLoop() {
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+// Start the game loop
+gameLoop();
+
+</script>
+</body>
+</html>

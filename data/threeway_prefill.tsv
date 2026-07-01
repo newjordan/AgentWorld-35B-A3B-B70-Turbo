@@ -1,0 +1,16 @@
+# AgentWorld-35B-A3B — 3-way prefill decomposition, Intel Arc Pro B70, Q5_K_M, f16 KV, 2026-07-01
+# upstream = mainline llama.cpp, default flags (DNN on, -b 2048 -ub 512)
+# up_flags = mainline llama.cpp, Turbo flags (GGML_SYCL_DISABLE_DNN=1, -b 8192 -ub 4096)
+# turbo    = fork (+3 unmerged fusion commits), Turbo flags
+# config_win = up_flags/upstream · code_win = turbo/up_flags · whole_win = turbo/upstream
+# source: qworld_turbo/results/THREEWAY_F16_B70.md, ## AgentWorld-35B-A3B, Prefill t/s vs prompt tokens
+
+## prefill t/s vs prompt tokens (single stream)
+prompt_tok	upstream	up_flags	turbo	config_win	code_win	whole_win
+805	1099	1397	1405	1.27	1.01	1.28
+3313	1096	1845	1850	1.68	1.00	1.69
+6963	1058	1736	1738	1.64	1.00	1.64
+14563	976	1535	1537	1.57	1.00	1.58
+29713	835	1205	1208	1.44	1.00	1.45
+61341	634	827	827	1.30	1.00	1.30
+129325	414	488	488	1.18	1.00	1.18

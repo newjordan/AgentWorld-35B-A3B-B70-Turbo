@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robo-Maze Shooter</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #111;
+            color: #eee;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #game-container {
+            position: relative;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.2);
+            border: 2px solid #333;
+        }
+        canvas {
+            display: block;
+            background-color: #000;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .hud {
+            padding: 10px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 18px;
+            font-weight: bold;
+            text-shadow: 1px 1px 0 #000;
+        }
+        #powerup-indicators {
+            padding: 10px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+        .powerup-indicator {
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: bold;
+            display: none;
+            text-shadow: 1px 1px 0 #000;
+        }
+        .speed-ind { background-color: #00f; color: #fff; }
+        .shield-ind { background-color: #0ff; color: #000; }
+        .spread-ind { background-color: #f0f; color: #fff; }
+
+        #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            pointer-events: auto;
+            text-align: center;
+        }
+        h1 {
+            color: #0f0;
+            text-shadow: 0 0 10px #0f0;
+            margin-bottom: 10px;
+        }
+        p {
+            color: #ccc;
+            margin: 5px 0;
+        }
+        .blink {
+            animation: blinker 1s linear infinite;
+            color: #ff0;
+            margin-top: 20px;
+            font-weight: bold;
+        }
+        @keyframes blinker {
+            50% { opacity: 0; }
+        }
+        #controls-hint {
+            margin-top: 20px;
+            font-size: 14px;
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div id="ui-layer">
+        <div class="hud">
+            <span id="score-display">SCORE: 0</span>
+            <span id="wave-display">WAVE: 1</span>
+            <span id="lives-display">LIVES: 3</span>
+        </div>
+        <div id="powerup-indicators">
+            <div id="ind-speed" class="powerup-indicator speed-ind">SPEED BOOST</div>
+            <div id="ind-shield" class="powerup-indicator shield-ind">SHIELD</div>
+            <div id="ind-spread" class="powerup-indicator spread-ind">SPREAD SHOT</div>
+        </div>
+    </div>
+    <div id="overlay">
+        <h1>ROBO-MAZE SHOOTER</h1>
+        <p>Navigate the maze. Destroy the robots. Find the exit.</p>
+        <div class="blink">PRESS SPACE TO START</div>
+        <div id="controls-hint">
+            WASD / ARROWS to Move<br>
+            SPACE to Shoot<br>
+            Find the Green Door to advance
+        </div>
+    </div>
+</div>
+
+<script>
+/**
+ * ROBO-MAZE SHOOTER
+ * A self-contained HTML5 Canvas game.
+ */
+
+// --- Audio System (Web Audio API) ---
+const AudioSys = {
+    ctx: null,
+    init: function() {
+        if (!this.ctx) {
+            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (this.ctx.state === 'suspended') {
+            this.ctx.resume();
+        }
+    },
+    playTone: function(freq, type, duration, vol = 0.1) {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+        gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + duration);
+    },
+    playShoot: function() {
+        // Laser sound
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(800, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(100, this.ctx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.15);
+    },
+    playExplosion: function() {
+        // Noise buffer for explosion
+        if (!this.ctx) return;
+        const bufferSize = this.ctx.sampleRate * 0.3; // 300ms
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+            data[i] = Math.random() * 2 - 1;
+        }
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = buffer;
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+        noise.connect(gain);
+        gain.connect(this.ctx.destination);
+        noise.start();
+    },
+    playWin: function() {
+        this.playTone(600, 'sine', 0.1, 0.1);
+        setTimeout(() => this.playTone(800, 'sine', 0.2, 0.1), 100);
+    },
+    playPowerup: function() {
+        this.playTone(400, 'square', 0.1, 0.1);
+        setTimeout(() => this.playTone(600, 'square', 0.1, 0.1), 100);
+        setTimeout(() => this.playTone(800, 'square', 0.2, 0.1), 200);
+    },
+    playScoutDeath: function() {
+        // Higher pitched quick explosion
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(600, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(300, this.ctx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.1);
+    },
+    playTankDeath: function() {
+        // Lower pitched heavier explosion
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(200, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(50, this.ctx.currentTime + 0.3);
+        gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.3);
+    }
+};
+
+// --- Game Constants & Setup ---
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const scoreEl = document.getElementById('score-display');
+const waveEl = document.getElementById('wave-display');
+const livesEl = document.getElementById('lives-display');
+
+const TILE_SIZE = 40;
+const COLS = 20;
+const ROWS = 15;
+
+// 1 = Wall, 0 = Path, 2 = Player Start, 3 = Exit Door, 4 = Robot Spawn
+const MAZE_LAYOUT = [
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+    [1,2,0,0,1,0,0,0,0,0,1,0,0,0,0,0,0,0,3,1],
+    [1,1,1,0,1,0,1,1,1,0,1,0,1,1,1,1,1,1,0,1],
+    [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,1,0,1],
+    [1,0,1,1,1,1,1,0,1,1,1,1,1,1,1,1,0,1,0,1],
+    [1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,1,0,0,0,1],
+    [1,1,1,1,1,1,1,0,1,0,1,1,1,1,0,1,1,1,1,1],
+    [1,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,0,0,0,1],
+    [1,0,1,1,1,0,1,1,1,0,1,0,1,1,1,1,1,1,0,1],
+    [1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1],
+    [1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1],
+    [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+    [1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1],
+    [1,4,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,4,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+];
+
+let gameState = 'START'; // START, PLAYING, GAMEOVER, LEVEL_COMPLETE
+let score = 0;
+let lives = 3;
+let wave = 1;
+let frameCount = 0;
+
+// --- Power-up System ---
+const POWERUP_TYPES = {
+    SPEED: 'speed',
+    SHIELD: 'shield',
+    SPREAD: 'spread'
+};
+
+let playerPowerups = {
+    speed: 0,
+    shield: 0,
+    spread: 0
+};
+
+let powerups = []; // Array of active power-up items on the map
+
+// --- Entities ---
+let player = {
+    x: 0, y: 0,
+    width: 24, height: 24,
+    speed: 3,
+    dx: 0, dy: 0,
+    angle: 0,
+    cooldown: 0
+};
+
+let bullets = [];
+let robots = [];
+let particles = [];
+let walls = [];
+let exitDoor = { x: 0, y: 0, w: TILE_SIZE, h: TILE_SIZE };
+
+// --- Input Handling ---
+const keys = {};
+window.addEventListener('keydown', e => {
+    keys[e.code] = true;
+    if (e.code === 'Space') {
+        if (gameState === 'START' || gameState === 'GAMEOVER') {
+            startGame();
+        } else if (gameState === 'LEVEL_COMPLETE') {
+            nextLevel();
+        } else if (gameState === 'PLAYING') {
+            shootBullet();
+        }
+    }
+});
+window.addEventListener('keyup', e => {
+    keys[e.code] = false;
+});
+
+// --- Initialization ---
+function initLevel() {
+    walls = [];
+    robots = [];
+    bullets = [];
+    particles = [];
+    powerups = [];
+    
+    // Reset powerup timers
+    playerPowerups.speed = 0;
+    playerPowerups.shield = 0;
+    playerPowerups.spread = 0;
+    updatePowerupIndicators();
+
+    // Parse Map
+    for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+            let type = MAZE_LAYOUT[r][c];
+            let x = c * TILE_SIZE;
+            let y = r * TILE_SIZE;
+
+            if (type === 1) {
+                walls.push({ x, y, w: TILE_SIZE, h: TILE_SIZE });
+            } else if (type === 2) {
+                player.x = x + (TILE_SIZE - player.width)/2;
+                player.y = y + (TILE_SIZE - player.height)/2;
+                player.dx = 0;
+                player.dy = 0;
+            } else if (type === 3) {
+                exitDoor.x = x;
+                exitDoor.y = y;
+                exitDoor.w = TILE_SIZE;
+                exitDoor.h = TILE_SIZE;
+            } else if (type === 4) {
+                spawnRobot(x + TILE_SIZE/2, y + TILE_SIZE/2);
+            }
+        }
+    }
+}
+
+function spawnRobot(rx, ry) {
+    // Determine type: 70% scout, 30% tank (or based on wave)
+    let isTank = false;
+    if (wave <= 3) {
+        isTank = Math.random() < 0.25;
+    } else if (wave <= 6) {
+        isTank = Math.random() < 0.4;
+    } else {
+        isTank = Math.random() < 0.55;
+    }
+
+    let type = isTank ? 'tank' : 'scout';
+    let w = isTank ? 28 : 20;
+    let h = isTank ? 28 : 20;
+    let speed = isTank ? (0.8 + (wave * 0.05)) : (2.5 + (wave * 0.1));
+    let health = isTank ? 3 : 1;
+    let color = isTank ? '#4488ff' : '#ffaa00';
+    
+    robots.push({
+        x: rx - w/2,
+        y: ry - h/2,
+        w: w, h: h,
+        speed: speed,
+        dx: 0, dy: 0,
+        state: 'PATROL', // PATROL, CHASE
+        patrolDir: Math.floor(Math.random() * 4), // 0:up, 1:right, 2:down, 3:left
+        changeDirTimer: 0,
+        type: type,
+        health: health,
+        maxHealth: health,
+        color: color
+    });
+}
+
+function spawnPowerup(x, y) {
+    const types = [POWERUP_TYPES.SPEED, POWERUP_TYPES.SHIELD, POWERUP_TYPES.SPREAD];
+    const type = types[Math.floor(Math.random() * types.length)];
+    
+    powerups.push({
+        x: x,
+        y: y,
+        w: 16,
+        h: 16,
+        type: type,
+        timer: 600 // 10 seconds at 60fps
+    });
+}
+
+function startGame() {
+    AudioSys.init();
+    score = 0;
+    lives = 3;
+    wave = 1;
+    gameState = 'PLAYING';
+    overlay.style.display = 'none';
+    updateHUD();
+    initLevel();
+    loop();
+}
+
+function nextLevel() {
+    wave++;
+    gameState = 'PLAYING';
+    overlay.style.display = 'none';
+    updateHUD();
+    initLevel();
+}
+
+function updateHUD() {
+    scoreEl.innerText = `SCORE: ${score}`;
+    waveEl.innerText = `WAVE: ${wave}`;
+    livesEl.innerText = `LIVES: ${lives}`;
+}
+
+function updatePowerupIndicators() {
+    const speedInd = document.getElementById('ind-speed');
+    const shieldInd = document.getElementById('ind-shield');
+    const spreadInd = document.getElementById('ind-spread');
+
+    speedInd.style.display = playerPowerups.speed > 0 ? 'block' : 'none';
+    shieldInd.style.display = playerPowerups.shield > 0 ? 'block' : 'none';
+    spreadInd.style.display = playerPowerups.spread > 0 ? 'block' : 'none';
+}
+
+// --- Physics & Logic ---
+function rectIntersect(r1, r2) {
+    return !(r2.x >= r1.x + r1.w || 
+             r2.x + r2.w <= r1.x || 
+             r2.y >= r1.y + r1.h || 
+             r2.y + r2.h <= r1.y);
+}
+
+function getWallCollisions(x, y, w, h) {
+    // Check against all walls
+    // Optimization: only check walls in nearby tiles
+    let colStart = Math.floor(x / TILE_SIZE);
+    let colEnd = Math.floor((x + w) / TILE_SIZE);
+    let rowStart = Math.floor(y / TILE_SIZE);
+    let rowEnd = Math.floor((y + h) / TILE_SIZE);
+
+    for (let r = rowStart; r <= rowEnd; r++) {
+        for (let c = colStart; c <= colEnd; c++) {
+            if (MAZE_LAYOUT[r] && MAZE_LAYOUT[r][c] === 1) {
+                let wx = c * TILE_SIZE;
+                let wy = r * TILE_SIZE;
+                if (x < wx + TILE_SIZE && x + w > wx &&
+                    y < wy + TILE_SIZE && y + h > wy) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+function shootBullet() {
+    if (player.cooldown > 0) return;
+    
+    AudioSys.playShoot();
+    
+    // Base bullet
+    bullets.push({
+        x: player.x + player.width/2 - 3,
+        y: player.y + player.height/2 - 3,
+        w: 6, h: 6,
+        dx: Math.cos(player.angle) * 8,
+        dy: Math.sin(player.angle) * 8
+    });
+
+    // Spread shot
+    if (playerPowerups.spread > 0) {
+        for (let i = -2; i <= 2; i++) {
+            if (i === 0) continue;
+            let angle = player.angle + (i * 0.15);
+            bullets.push({
+                x: player.x + player.width/2 - 3,
+                y: player.y + player.height/2 - 3,
+                w: 6, h: 6,
+                dx: Math.cos(angle) * 8,
+                dy: Math.sin(angle) * 8
+            });
+        }
+    }
+
+    player.cooldown = 15; // frames
+}
+
+function createExplosion(x, y, color) {
+    for(let i=0; i<10; i++) {
+        particles.push({
+            x: x, y: y,
+            vx: (Math.random() - 0.5) * 6,
+            vy: (Math.random() - 0.5) * 6,
+            life: 30,
+            color: color
+        });
+    }
+}
+
+function update() {
+    if (gameState !== 'PLAYING') return;
+
+    frameCount++;
+
+    // Update powerup timers
+    if (playerPowerups.speed > 0) playerPowerups.speed--;
+    if (playerPowerups.shield > 0) playerPowerups.shield--;
+    if (playerPowerups.spread > 0) playerPowerups.spread--;
+    updatePowerupIndicators();
+
+    // Player Movement
+    let moveSpeed = player.speed;
+    if (playerPowerups.speed > 0) moveSpeed *= 1.5;
+    
+    let dx = 0;
+    let dy = 0;
+
+    if (keys['ArrowUp'] || keys['KeyW']) dy = -moveSpeed;
+    if (keys['ArrowDown'] || keys['KeyS']) dy = moveSpeed;
+    if (keys['ArrowLeft'] || keys['KeyA']) dx = -moveSpeed;
+    if (keys['ArrowRight'] || keys['KeyD']) dx = moveSpeed;
+
+    // Normalize diagonal
+    if (dx !== 0 && dy !== 0) {
+        dx *= 0.707;
+        dy *= 0.707;
+    }
+
+    // Calculate angle for shooting
+    if (dx !== 0 || dy !== 0) {
+        player.angle = Math.atan2(dy, dx);
+    }
+
+    // Try move X
+    if (!getWallCollisions(player.x + dx, player.y, player.width, player.height)) {
+        player.x += dx;
+    }
+    // Try move Y
+    if (!getWallCollisions(player.x, player.y + dy, player.width, player.height)) {
+        player.y += dy;
+    }
+
+    if (player.cooldown > 0) player.cooldown--;
+
+    // Bullets
+    for (let i = bullets.length - 1; i >= 0; i--) {
+        let b = bullets[i];
+        b.x += b.dx;
+        b.y += b.dy;
+
+        // Wall collision
+        if (getWallCollisions(b.x, b.y, b.w, b.h)) {
+            bullets.splice(i, 1);
+            continue;
+        }
+
+        // Robot collision
+        let hitRobot = false;
+        for (let j = robots.length - 1; j >= 0; j--) {
+            let r = robots[j];
+            if (rectIntersect(b, r)) {
+                r.health--;
+                if (r.health <= 0) {
+                    // Destroy robot
+                    createExplosion(r.x + r.w/2, r.y + r.h/2, r.color);
+                    if (r.type === 'scout') {
+                        AudioSys.playScoutDeath();
+                    } else {
+                        AudioSys.playTankDeath();
+                    }
+                    robots.splice(j, 1);
+                    bullets.splice(i, 1);
+                    score += (r.type === 'scout' ? 100 : 250);
+                    updateHUD();
+                    
+                    // Chance to spawn powerup when robot destroyed
+                    if (Math.random() < 0.2) { // 20% chance
+                        spawnPowerup(r.x + r.w/2 - 8, r.y + r.h/2 - 8);
+                    }
+                } else {
+                    // Hit but not destroyed - flash effect or small particle
+                    createExplosion(r.x + r.w/2, r.y + r.h/2, '#fff');
+                    bullets.splice(i, 1); // bullet hits and stops
+                }
+                hitRobot = true;
+                break;
+            }
+        }
+        if (hitRobot) continue;
+
+        // Out of bounds
+        if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
+            bullets.splice(i, 1);
+        }
+    }
+
+    // Robots
+    robots.forEach(r => {
+        // Simple AI: Move towards player if close, else random patrol
+        let distToPlayer = Math.hypot(player.x - (r.x + r.w/2), player.y - (r.y + r.h/2));
+        
+        let moveX = 0;
+        let moveY = 0;
+
+        if (distToPlayer < 200) {
+            // Chase
+            let angle = Math.atan2(player.y - (r.y + r.h/2), player.x - (r.x + r.w/2));
+            moveX = Math.cos(angle) * r.speed;
+            moveY = Math.sin(angle) * r.speed;
+        } else {
+            // Patrol
+            r.changeDirTimer--;
+            if (r.changeDirTimer <= 0) {
+                r.patrolDir = Math.floor(Math.random() * 4);
+                r.changeDirTimer = 60 + Math.random() * 60;
+            }
+            if (r.patrolDir === 0) moveY = -r.speed;
+            else if (r.patrolDir === 1) moveX = r.speed;
+            else if (r.patrolDir === 2) moveY = r.speed;
+            else if (r.patrolDir === 3) moveX = -r.speed;
+        }
+
+        // Move Robot X
+        if (!getWallCollisions(r.x + moveX, r.y, r.w, r.h)) {
+            r.x += moveX;
+        }
+        // Move Robot Y
+        if (!getWallCollisions(r.x, r.y + moveY, r.w, r.h)) {
+            r.y += moveY;
+        }
+
+        // Player Collision
+        if (rectIntersect(player, r)) {
+            if (playerPowerups.shield > 0) {
+                // Shield absorbs hit
+                createExplosion(r.x + r.w/2, r.y + r.h/2, '#0ff');
+                AudioSys.playExplosion();
+                robots = robots.filter(robot => robot !== r);
+                score += 100;
+                updateHUD();
+                playerPowerups.shield = 0; // Consume shield
+                updatePowerupIndicators();
+            } else {
+                createExplosion(player.x + player.width/2, player.y + player.height/2, '#0f0');
+                AudioSys.playExplosion();
+                lives--;
+                updateHUD();
+                if (lives <= 0) {
+                    gameState = 'GAMEOVER';
+                    overlay.innerHTML = `<h1>GAME OVER</h1><p>Final Score: ${score}</p><div class="blink">PRESS SPACE TO RESTART</div>`;
+                    overlay.style.display = 'flex';
+                } else {
+                    // Respawn player at start
+                    initLevel(); 
+                }
+            }
+        }
+    });
+
+    // Powerups
+    for (let i = powerups.length - 1; i >= 0; i--) {
+        let p = powerups[i];
+        p.timer--;
+        
+        // Remove if timer expires
+        if (p.timer <= 0) {
+            powerups.splice(i, 1);
+            continue;
+        }
+        
+        // Player collision
+        if (rectIntersect(player, p)) {
+            AudioSys.playPowerup();
+            if (p.type === POWERUP_TYPES.SPEED) {
+                playerPowerups.speed = 600; // 10 seconds
+            } else if (p.type === POWERUP_TYPES.SHIELD) {
+                playerPowerups.shield = 600; // 10 seconds
+            } else if (p.type === POWERUP_TYPES.SPREAD) {
+                playerPowerups.spread = 600; // 10 seconds
+            }
+            updatePowerupIndicators();
+            powerups.splice(i, 1);
+        }
+    }
+
+    // Particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+        let p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life--;
+        if (p.life <= 0) particles.splice(i, 1);
+    }
+
+    // Exit Door Check
+    if (rectIntersect(player, exitDoor)) {
+        if (robots.length === 0) {
+            gameState = 'LEVEL_COMPLETE';
+            AudioSys.playWin();
+            overlay.innerHTML = `<h1>ROOM CLEARED</h1><p>Score: ${score}</p><div class="blink">PRESS SPACE FOR NEXT ROOM</div>`;
+            overlay.style.display = 'flex';
+        }
+    }
+}
+
+// --- Rendering ---
+function draw() {
+    // Clear
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Draw Walls
+    ctx.fillStyle = '#444';
+    ctx.strokeStyle = '#666';
+    ctx.lineWidth = 2;
+    walls.forEach(w => {
+        ctx.fillRect(w.x, w.y, w.w, w.h);
+        ctx.strokeRect(w.x, w.y, w.w, w.h);
+        // Inner detail
+        ctx.fillStyle = '#333';
+        ctx.fillRect(w.x + 5, w.y + 5, w.w - 10, w.h - 10);
+        ctx.fillStyle = '#444';
+    });
+
+    // Draw Exit Door
+    ctx.fillStyle = '#050';
+    ctx.fillRect(exitDoor.x, exitDoor.y, exitDoor.w, exitDoor.h);
+    ctx.strokeStyle = '#0f0';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(exitDoor.x + 2, exitDoor.y + 2, exitDoor.w - 4, exitDoor.h - 4);
+    ctx.fillStyle = '#0f0';
+    ctx.font = '12px monospace';
+    ctx.fillText("EXIT", exitDoor.x + 6, exitDoor.y + 24);
+
+    // Draw Powerups
+    powerups.forEach(p => {
+        let color = '#fff';
+        let symbol = '?';
+        
+        if (p.type === POWERUP_TYPES.SPEED) {
+            color = '#00f';
+            symbol = '>>';
+        } else if (p.type === POWERUP_TYPES.SHIELD) {
+            color = '#0ff';
+            symbol = 'S';
+        } else if (p.type === POWERUP_TYPES.SPREAD) {
+            color = '#f0f';
+            symbol = 'SS';
+        }
+        
+        // Pulsing effect
+        let alpha = 0.5 + 0.5 * Math.sin(frameCount * 0.1);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = color;
+        ctx.fillRect(p.x, p.y, p.w, p.h);
+        
+        ctx.fillStyle = '#fff';
+        ctx.font = '10px monospace';
+        ctx.fillText(symbol, p.x + 2, p.y + 12);
+        ctx.globalAlpha = 1;
+    });
+
+    // Draw Player
+    ctx.save();
+    ctx.translate(player.x + player.width/2, player.y + player.height/2);
+    ctx.rotate(player.angle);
+    
+    // Shield effect
+    if (playerPowerups.shield > 0) {
+        ctx.strokeStyle = '#0ff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, 18, 0, Math.PI * 2);
+        ctx.stroke();
+    }
+
+    // Body
+    ctx.fillStyle = playerPowerups.speed > 0 ? '#88f' : '#0f0';
+    ctx.fillRect(-12, -12, 24, 24);
+    // Turret
+    ctx.fillStyle = '#ccffcc';
+    ctx.fillRect(0, -4, 16, 8);
+    // Eyes
+    ctx.fillStyle = '#000';
+    ctx.fillRect(4, -6, 4, 4);
+    ctx.fillRect(4, 2, 4, 4);
+    
+    ctx.restore();
+
+    // Draw Robots
+    robots.forEach(r => {
+        ctx.fillStyle = r.color || '#f00';
+        ctx.fillRect(r.x, r.y, r.w, r.h);
+        
+        // Type-specific visuals
+        if (r.type === 'tank') {
+            // Tank has a core or heavier look
+            ctx.fillStyle = '#224488';
+            ctx.fillRect(r.x + r.w/2 - 5, r.y + r.h/2 - 5, 10, 10);
+            // Eyes
+            ctx.fillStyle = '#ff4444';
+            ctx.fillRect(r.x + 6, r.y + 8, 6, 4);
+            ctx.fillRect(r.x + r.w - 12, r.y + 8, 6, 4);
+        } else if (r.type === 'scout') {
+            // Scout has a speed line or antenna
+            ctx.fillStyle = '#ffff00';
+            ctx.fillRect(r.x + 5, r.y + 5, 3, 3);
+            ctx.fillRect(r.x + r.w - 8, r.y + 5, 3, 3);
+            // Speed lines
+            ctx.strokeStyle = '#ffaa00';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(r.x + r.w/2, r.y + r.h);
+            ctx.lineTo(r.x + r.w/2, r.y + r.h + 6);
+            ctx.stroke();
+            ctx.lineWidth = 1;
+        }
+        
+        // Health indicator for tank
+        if (r.type === 'tank' && r.maxHealth > 1) {
+            // Draw health bar above tank
+            let barWidth = r.w;
+            let barHeight = 4;
+            let healthPct = r.health / r.maxHealth;
+            ctx.fillStyle = '#300';
+            ctx.fillRect(r.x, r.y - 8, barWidth, barHeight);
+            ctx.fillStyle = healthPct > 0.5 ? '#0f0' : (healthPct > 0.25 ? '#ff0' : '#f00');
+            ctx.fillRect(r.x, r.y - 8, barWidth * healthPct, barHeight);
+        }
+    });
+
+    // Draw Bullets
+    ctx.fillStyle = '#ff0';
+    bullets.forEach(b => {
+        ctx.fillRect(b.x, b.y, b.w, b.h);
+    });
+
+    // Draw Particles
+    particles.forEach(p => {
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = p.life / 30;
+        ctx.fillRect(p.x, p.y, 4, 4);
+    });
+    ctx.globalAlpha = 1;
+
+    // Scanline effect
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+    for (let i = 0; i < canvas.height; i += 4) {
+        ctx.fillRect(0, i, canvas.width, 2);
+    }
+}
+
+function loop() {
+    if (gameState === 'PLAYING' || gameState === 'LEVEL_COMPLETE') {
+        update();
+    }
+    draw();
+    requestAnimationFrame(loop);
+}
+
+// Initial Draw
+draw();
+
+</script>
+</body>
+</html>

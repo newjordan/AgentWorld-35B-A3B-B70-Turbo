@@ -1,0 +1,19 @@
+# AgentWorld-35B-A3B — 3-way fleet decomposition, Intel Arc Pro B70, Q5_K_M, f16 KV, 2026-07-01
+# upstream = mainline llama.cpp, default flags (DNN on, -b 2048 -ub 512)
+# up_flags = mainline llama.cpp, Turbo flags (GGML_SYCL_DISABLE_DNN=1, -b 8192 -ub 4096)
+# turbo    = fork (+3 unmerged fusion commits), Turbo flags
+# config_win = up_flags/upstream · code_win = turbo/up_flags · whole_win = turbo/upstream
+# source: qworld_turbo/results/THREEWAY_F16_B70.md, ## AgentWorld-35B-A3B, Fleet aggregate decode t/s vs agents (2048+256 synthetic)
+
+## fleet aggregate decode t/s vs agents (2048p+256g synthetic, llama-server)
+agents	upstream	up_flags	turbo	config_win	code_win	whole_win
+1	78.5	79.0	86.1	1.01	1.09	1.10
+2	73.2	72.4	73.9	0.99	1.02	1.01
+4	93.3	119.0	120.9	1.28	1.02	1.30
+8	102.3	142.0	138.7	1.39	0.98	1.36
+16	107.5	146.2	144.0	1.36	0.98	1.34
+24	117.6	158.2	158.2	1.35	1.00	1.35
+32	125.1	168.0	166.7	1.34	0.99	1.33
+40	132.4	172.8	172.0	1.31	1.00	1.30
+48	138.2	177.6	177.6	1.29	1.00	1.29
+56	142.2	181.4	180.9	1.28	1.00	1.27

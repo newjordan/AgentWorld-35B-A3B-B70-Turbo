@@ -9,16 +9,40 @@ quantized **Q5_K_M**, running on a single **Intel Arc Pro B70** (30.3 GiB, 230 W
 Same weights as upstream — the "Turbo" is the serving stack (fused decode build + tuned batch/KV/DNN
 flags), so every speedup is **lossless**.
 
+## Where the speed comes from
+
+Three configs, same Q5_K_M weights, same f16 KV, same GPU. `config win = (2)/(1)` · `code win = (3)/(2)`:
+1. **upstream** — mainline llama.cpp, default flags
+2. **up+flags** — same mainline + Turbo flags (`GGML_SYCL_DISABLE_DNN=1 -b 8192 -ub 4096`)
+3. **Turbo** — fork (+3 unmerged fusion commits: topk-MoE router fusion, gate-glue fusion,
+   single-token expert-aggregate) + same flags
+
+| win | size | source |
+|---|---|---|
+| Prefill | **1.2–1.7×** | 100% runtime config, reproducible on stock upstream. Fusion adds ~nothing (1.00–1.01×). |
+| Fleet | **~1.3–1.4×** | 100% runtime config. Fusion adds ~nothing (0.98–1.02×). |
+| Decode (single stream) | **+7–14%** every depth, 0.8k→129k | fork-only fusion — the one genuinely-Turbo-only win. |
+
+**Costs:** at 8–16 concurrent agents the fusion is ~2% slower than the same flags without it (code
+win 0.98×; neutral at 24+). `-ub 4096` trades VRAM (larger compute buffer) for the prefill win.
+**Quality:** identical weights, lossless.
+**Provenance:** the Q4/Q5/Q6_K MoE reorder is merged upstream (`ggml-org/llama.cpp` PR #24452); the
+3 fusion commits above are fork-only, no PR.
+
+So: adopt the upstream flags for the big prefill/fleet win, free, no fork needed. The Turbo fork
+build adds ~+10% single-stream decode on top via the fusion commits. Full decomposition verbatim
+from `THREEWAY_F16_B70.md`: §§2–4 below.
+
 ## TL;DR
 
 | axis | result |
 |---|---|
-| **Prefill vs stock** | **1.3–1.86×** (peak ~1.86× @ ~7k tok) — `-ub 4096` + DNN-off |
-| **Decode vs stock** | **1.07–1.14×** at every depth (0.8k→129k), no penalty |
-| **Fleet decode** | **~1.2× @ 32 agents**; 160→224 t/s aggregate at the knee |
+| **Prefill** | **1.2–1.7×** vs upstream defaults — 100% runtime config (fusion adds 1.00–1.01×) |
+| **Decode (single stream)** | **+7–14%** at every depth (0.8k→129k) — the one fork-only win |
+| **Fleet decode** | **~1.3–1.4×** vs upstream defaults — also 100% config; fusion ~neutral (0.98–1.02×) |
 | **Concurrency knee** | **np 32** (159.9 t/s agg); hard cliff at np ≥ 56 |
 | **Context** | 262144 with f16 KV on the 32 GB card |
-| **Quality** | lossless decode · Q5 == Q6 on game builds · GSM8K 97 / HellaSwag 81.9 |
+| **Quality** | lossless — identical weights across all 3 configs · GSM8K 97 / HellaSwag 81.9 |
 
 ## Ship config
 
@@ -55,40 +79,55 @@ np 56 falls off the 30 GiB memory cliff (−21×).
 | aggregate t/s | 76.4 | 107.8 | 127.8 | 146.3 | **159.9** | 169.6 | 178.3 | 10.0 ⚠ |
 | per-agent t/s | 76.4 | 13.5 | 8.0 | 6.1 | **5.0** | 4.2 | 3.7 | 0.18 |
 
-### 2 · Turbo vs Stock — fleet decode
-Same weights / GPU / compiler, only the serving stack differs. Turbo's win grows with batch size,
-peaking **1.20× at 32 agents**.
+### 2 · Fleet — 3-way decomposition
+Same Q5_K_M weights / GPU / compiler; only runtime flags and fusion code vary. 2048-tok prompt +
+256 gen, synthetic client. `config = (2)/(1)` · `code = (3)/(2)` · `whole = (3)/(1)`.
 
-![turbo vs stock fleet](charts/02_turbo_vs_stock_fleet.svg)
+![fleet 3-way](charts/09_threeway_fleet.svg)
 
-| agents | 1 | 8 | 16 | 32 | structured×32 | novel×32 |
-|---|--:|--:|--:|--:|--:|--:|
-| stock | 62.3 | 125.1 | 146.8 | 186.9 | 134.4 | 110.9 |
-| **turbo** | 62.6 | 141.5 | 163.4 | **224.0** | 169.4 | 138.4 |
-| ratio | 1.00× | 1.13× | 1.11× | **1.20×** | 1.26× | 1.25× |
+| agents | upstream | up+flags | Turbo | config | code | whole |
+|--:|--:|--:|--:|:--:|:--:|:--:|
+| 1 | 78.5 | 79.0 | 86.1 | 1.01× | 1.09× | 1.10× |
+| 2 | 73.2 | 72.4 | 73.9 | 0.99× | 1.02× | 1.01× |
+| 4 | 93.3 | 119.0 | 120.9 | 1.28× | 1.02× | 1.30× |
+| 8 | 102.3 | 142.0 | 138.7 | 1.39× | 0.98× | 1.36× |
+| 16 | 107.5 | 146.2 | 144.0 | 1.36× | 0.98× | 1.34× |
+| 24 | 117.6 | 158.2 | 158.2 | 1.35× | 1.00× | 1.35× |
+| 32 | 125.1 | 168.0 | 166.7 | 1.34× | 0.99× | 1.33× |
+| 40 | 132.4 | 172.8 | 172.0 | 1.31× | 1.00× | 1.30× |
+| 48 | 138.2 | 177.6 | 177.6 | 1.29× | 1.00× | 1.29× |
+| 56 | 142.2 | 181.4 | 180.9 | 1.28× | 1.00× | 1.27× |
 
-### 3 · Turbo vs Stock — prefill
-The `-ub 4096` + DNN-off win. KV-dtype-insensitive.
+### 3 · Prefill — 3-way decomposition
+Single stream. `config = (2)/(1)` · `code = (3)/(2)` · `whole = (3)/(1)`.
 
-![prefill](charts/03_turbo_vs_stock_prefill.svg)
+![prefill 3-way](charts/07_threeway_prefill.svg)
 
-| prompt tok | 805 | 3.3k | 7k | 14.5k | 29.7k | 61k | 129k |
-|---|--:|--:|--:|--:|--:|--:|--:|
-| stock | 635 | 856 | 849 | 813 | 712 | 561 | 381 |
-| **turbo** | 832 | 1522 | 1577 | 1452 | 1171 | 818 | 487 |
-| ratio | 1.31× | 1.78× | **1.86×** | 1.79× | 1.64× | 1.46× | 1.28× |
+| prompt | upstream | up+flags | Turbo | config | code | whole |
+|--:|--:|--:|--:|:--:|:--:|:--:|
+| 805 | 1099 | 1397 | 1405 | 1.27× | 1.01× | 1.28× |
+| 3313 | 1096 | 1845 | 1850 | 1.68× | 1.00× | 1.69× |
+| 6963 | 1058 | 1736 | 1738 | 1.64× | 1.00× | 1.64× |
+| 14563 | 976 | 1535 | 1537 | 1.57× | 1.00× | 1.58× |
+| 29713 | 835 | 1205 | 1208 | 1.44× | 1.00× | 1.45× |
+| 61341 | 634 | 827 | 827 | 1.30× | 1.00× | 1.30× |
+| 129325 | 414 | 488 | 488 | 1.18× | 1.00× | 1.18× |
 
-### 4 · Decode vs context depth — and the q8_0-KV cliff
-Shipped Turbo (f16) beats stock at every depth. The bench driver's **q8_0 KV collapses** with context
-(the reason we ship f16).
+### 4 · Decode vs context depth — 3-way decomposition
+Single stream, f16 KV throughout (see the KV note above for the separate q8_0-vs-f16 finding).
+`config = (2)/(1)` · `code = (3)/(2)` · `whole = (3)/(1)`.
 
-![decode vs context](charts/04_decode_vs_context.svg)
+![decode 3-way](charts/08_threeway_decode.svg)
 
-| context tok | 805 | 3.3k | 7k | 14.5k | 29.7k | 61k | 129k |
-|---|--:|--:|--:|--:|--:|--:|--:|
-| stock (f16) | 80.3 | 78.9 | 76.5 | 72.0 | 65.5 | 55.3 | 41.3 |
-| **turbo (f16, shipped)** | 91.7 | 89.3 | 86.4 | 81.1 | 73.3 | 60.6 | 44.0 |
-| turbo (q8_0 KV) | 84.9 | 74.1 | 62.7 | 47.0 | 32.1 | 19.3 | 10.4 |
+| depth | upstream | up+flags | Turbo | config | code | whole |
+|--:|--:|--:|--:|:--:|:--:|:--:|
+| 805 | 81.7 | 81.7 | 93.6 | 1.00× | 1.14× | 1.15× |
+| 3313 | 80.0 | 79.8 | 91.3 | 1.00× | 1.14× | 1.14× |
+| 6963 | 77.5 | 77.4 | 88.3 | 1.00× | 1.14× | 1.14× |
+| 14563 | 73.0 | 72.7 | 82.3 | 1.00× | 1.13× | 1.13× |
+| 29713 | 66.6 | 66.1 | 74.1 | 0.99× | 1.12× | 1.11× |
+| 61341 | 55.7 | 55.5 | 61.0 | 1.00× | 1.10× | 1.10× |
+| 129325 | 41.5 | 41.3 | 44.3 | 1.00× | 1.07× | 1.07× |
 
 ### 5 · Accuracy (Q5_K_M, lm-eval)
 Lossless quant + serving → accuracy unchanged. Wikitext-2 **PPL 5.96** (lower better).
@@ -120,10 +159,13 @@ _GSM8K here is the CoT lm-eval config; an earlier strict-extract harness scored 
 ```bash
 # charts (uses the newjordan/echarts fork via SSR → SVG)
 ECHARTS_ESM=/path/to/newjordan-echarts/dist/echarts.esm.min.mjs node charts/gen_charts.mjs
+ECHARTS_ESM=/path/to/newjordan-echarts/dist/echarts.esm.min.mjs node charts/gen_threeway.mjs
 ```
 
-Raw data in [`data/`](data/). Serving/bench harnesses live in `qworld_turbo/` (moe-ready build,
-`bench/run_live_evals.sh`, `bench/concurrency_pareto_guarded.sh`).
+Raw data in [`data/`](data/); per-run `llama-bench` output + pareto TSVs for the 3-way decomposition
+in [`data/raw/`](data/raw/). Serving/bench harnesses live in `qworld_turbo/` (moe-ready build,
+`bench/run_live_evals.sh`, `bench/concurrency_pareto_guarded.sh`). Example game builds from the
+fleet evals: [`examples/games/`](examples/games/).
 
 ## Provenance / caveats
 - Weights: `qwen3_5_moe` AgentWorld-35B-A3B, Q5_K_M (imatrix). Not in this repo (R&D).

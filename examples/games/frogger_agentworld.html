@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frogger - Classic Arcade Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #111;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Courier New', Courier, monospace;
+            overflow: hidden;
+        }
+        canvas {
+            border: 4px solid #4CAF50;
+            box-shadow: 0 0 20px rgba(76, 175, 80, 0.5);
+            background-color: #000;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="600" height="650"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Game Constants
+        const GRID_SIZE = 50;
+        const COLS = 12;
+        const ROWS = 13;
+        const CANVAS_WIDTH = COLS * GRID_SIZE;
+        const CANVAS_HEIGHT = ROWS * GRID_SIZE;
+
+        // Game States
+        const STATE = {
+            MENU: 0,
+            PLAYING: 1,
+            GAME_OVER: 2,
+            VICTORY: 3,
+            LEVEL_TRANSITION: 4
+        };
+
+        // Game Variables
+        let currentState = STATE.MENU;
+        let score = 0;
+        let lives = 3;
+        let currentLevel = 1;
+        let frameCount = 0;
+        let transitionTimer = 0;
+
+        // Particle System
+        let particles = [];
+        
+        class Particle {
+            constructor(x, y, color, type = 'normal') {
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                this.type = type;
+                this.life = 1.0;
+                this.decay = Math.random() * 0.03 + 0.02;
+                
+                if (type === 'splash') {
+                    this.vx = (Math.random() - 0.5) * 6;
+                    this.vy = (Math.random() - 0.5) * 6 - 2;
+                    this.size = Math.random() * 4 + 2;
+                } else if (type === 'collision') {
+                    this.vx = (Math.random() - 0.5) * 8;
+                    this.vy = (Math.random() - 0.5) * 8;
+                    this.size = Math.random() * 5 + 3;
+                } else if (type === 'victory') {
+                    this.vx = (Math.random() - 0.5) * 10;
+                    this.vy = (Math.random() - 0.5) * 10 - 5;
+                    this.size = Math.random() * 6 + 4;
+                    this.decay = 0.015;
+                } else if (type === 'log_ride') {
+                    this.vx = (Math.random() - 0.5) * 2;
+                    this.vy = -Math.random() * 2 - 1;
+                    this.size = Math.random() * 3 + 1;
+                    this.decay = 0.05;
+                }
+            }
+            
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.life -= this.decay;
+                
+                if (this.type === 'splash' || this.type === 'collision' || this.type === 'victory') {
+                    this.vy += 0.2; // gravity
+                }
+                
+                if (this.type === 'log_ride') {
+                    this.vy *= 0.95;
+                    this.vx *= 0.95;
+                }
+            }
+            
+            draw() {
+                ctx.globalAlpha = Math.max(0, this.life);
+                ctx.fillStyle = this.color;
+                
+                if (this.type === 'victory') {
+                    // Draw star shape for victory particles
+                    ctx.beginPath();
+                    for (let i = 0; i < 5; i++) {
+                        const angle = (i * 4 * Math.PI) / 5 - Math.PI / 2;
+                        const x = this.x + Math.cos(angle) * this.size;
+                        const y = this.y + Math.sin(angle) * this.size;
+                        if (i === 0) ctx.moveTo(x, y);
+                        else ctx.lineTo(x, y);
+                    }
+                    ctx.closePath();
+                    ctx.fill();
+                } else {
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                
+                ctx.globalAlpha = 1.0;
+            }
+        }
+
+        function createParticles(x, y, color, type, count = 10) {
+            for (let i = 0; i < count; i++) {
+                particles.push(new Particle(x, y, color, type));
+            }
+        }
+
+        function updateParticles() {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                particles[i].update();
+                if (particles[i].life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+        }
+
+        function drawParticles() {
+            particles.forEach(p => p.draw());
+        }
+
+        // Frog Object
+        const frog = {
+            x: 6 * GRID_SIZE,
+            y: 12 * GRID_SIZE,
+            targetX: 6 * GRID_SIZE,
+            targetY: 12 * GRID_SIZE,
+            width: GRID_SIZE - 10,
+            height: GRID_SIZE - 10,
+            offsetX: 5,
+            offsetY: 5,
+            isMoving: false,
+            moveProgress: 0,
+            moveDuration: 10, // frames for smooth movement
+            color: '#4CAF50',
+            rideParticlesTimer: 0
+        };
+
+        // Entities Arrays
+        let vehicles = [];
+        let logs = [];
+        let turtles = [];
+
+        // Input Handling
+        const keys = {};
+        window.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+            
+            if (currentState === STATE.MENU) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    startGame();
+                }
+            } else if (currentState === STATE.GAME_OVER || currentState === STATE.VICTORY) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    currentState = STATE.MENU;
+                }
+            } else if (currentState === STATE.PLAYING) {
+                handleFrogMovement(e.key);
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+
+        function handleFrogMovement(key) {
+            if (frog.isMoving) return;
+
+            let targetX = frog.x;
+            let targetY = frog.y;
+            let moved = false;
+
+            if (key === 'ArrowUp' || key === 'w' || key === 'W') {
+                targetY -= GRID_SIZE;
+                moved = true;
+            } else if (key === 'ArrowDown' || key === 's' || key === 'S') {
+                targetY += GRID_SIZE;
+                moved = true;
+            } else if (key === 'ArrowLeft' || key === 'a' || key === 'A') {
+                targetX -= GRID_SIZE;
+                moved = true;
+            } else if (key === 'ArrowRight' || key === 'd' || key === 'D') {
+                targetX += GRID_SIZE;
+                moved = true;
+            }
+
+            if (moved) {
+                // Check boundaries
+                if (targetX >= 0 && targetX <= (COLS - 1) * GRID_SIZE && 
+                    targetY >= 0 && targetY <= (ROWS - 1) * GRID_SIZE) {
+                    
+                    frog.targetX = targetX;
+                    frog.targetY = targetY;
+                    frog.isMoving = true;
+                    frog.moveProgress = 0;
+                    
+                    // Check if frog reached home (top rows)
+                    if (frog.targetY < 2 * GRID_SIZE) {
+                        levelComplete();
+                    }
+                }
+            }
+        }
+
+        function startGame() {
+            score = 0;
+            lives = 3;
+            currentLevel = 1;
+            resetLevel();
+            currentState = STATE.PLAYING;
+        }
+
+        function resetLevel() {
+            frog.x = 6 * GRID_SIZE;
+            frog.y = 12 * GRID_SIZE;
+            frog.targetX = 6 * GRID_SIZE;
+            frog.targetY = 12 * GRID_SIZE;
+            frog.isMoving = false;
+            frog.moveProgress = 0;
+            
+            vehicles = [];
+            logs = [];
+            turtles = [];
+            particles = [];
+            
+            generateLevelEntities();
+        }
+
+        function generateLevelEntities() {
+            // Road lanes: 8, 9, 10, 11
+            for (let row = 8; row <= 11; row++) {
+                const speed = (currentLevel === 1 ? 2 : 3.5) + Math.random() * 1.5;
+                const direction = row % 2 === 0 ? 1 : -1;
+                const vehicleType = Math.random() > 0.4 ? 'car' : (Math.random() > 0.5 ? 'truck' : 'bus');
+                let width = GRID_SIZE * 1.5;
+                if (vehicleType === 'truck') width = GRID_SIZE * 2.5;
+                if (vehicleType === 'bus') width = GRID_SIZE * 3;
+
+                const numVehicles = currentLevel === 1 ? 2 : 3;
+                for (let i = 0; i < numVehicles; i++) {
+                    vehicles.push({
+                        x: Math.random() * CANVAS_WIDTH,
+                        y: row * GRID_SIZE,
+                        width: width,
+                        height: GRID_SIZE - 10,
+                        speed: speed * direction,
+                        type: vehicleType,
+                        color: vehicleType === 'car' ? 
+                            (Math.random() > 0.5 ? '#F44336' : '#2196F3') : 
+                            (vehicleType === 'truck' ? '#FF9800' : '#9C27B0')
+                    });
+                }
+            }
+
+            // River lanes: 1, 2, 4, 5, 6
+            const riverConfig = [
+                { row: 1, type: 'log', speed: 1.5 + Math.random(), dir: 1, count: 3 },
+                { row: 2, type: 'turtle', speed: 2 + Math.random(), dir: -1, count: 4 },
+                { row: 4, type: 'log', speed: 1.8 + Math.random(), dir: -1, count: 3 },
+                { row: 5, type: 'log', speed: 2.2 + Math.random(), dir: 1, count: 2 },
+                { row: 6, type: 'turtle', speed: 3 + Math.random() * currentLevel, dir: 1, count: 3 }
+            ];
+
+            riverConfig.forEach(config => {
+                for (let i = 0; i < config.count; i++) {
+                    const isLog = config.type === 'log';
+                    const entity = {
+                        x: Math.random() * CANVAS_WIDTH,
+                        y: config.row * GRID_SIZE,
+                        width: isLog ? (GRID_SIZE * 2 + Math.random() * GRID_SIZE) : (GRID_SIZE * 1.5),
+                        height: GRID_SIZE - 10,
+                        speed: config.speed * config.dir,
+                        type: config.type,
+                        color: isLog ? '#8D6E63' : '#4CAF50'
+                    };
+                    if (isLog) {
+                        logs.push(entity);
+                    } else {
+                        turtles.push(entity);
+                    }
+                }
+            });
+        }
+
+        function levelComplete() {
+            score += 100 * currentLevel;
+            currentLevel++;
+            
+            // Create victory particles
+            createParticles(frog.x + frog.width/2, frog.y + frog.height/2, '#FFEB3B', 'victory', 30);
+            createParticles(frog.x + frog.width/2, frog.y + frog.height/2, '#4CAF50', 'victory', 20);
+            
+            if (currentLevel > 2) {
+                currentState = STATE.VICTORY;
+            } else {
+                currentState = STATE.LEVEL_TRANSITION;
+                transitionTimer = 120; // 2 seconds at 60fps
+            }
+        }
+
+        function handleDeath() {
+            lives--;
+            
+            // Create splash/collision particles
+            createParticles(frog.x + frog.width/2, frog.y + frog.height/2, '#F44336', 'collision', 15);
+            createParticles(frog.x + frog.width/2, frog.y + frog.height/2, '#1976D2', 'splash', 10);
+            
+            if (lives <= 0) {
+                currentState = STATE.GAME_OVER;
+            } else {
+                frog.x = 6 * GRID_SIZE;
+                frog.y = 12 * GRID_SIZE;
+                frog.targetX = 6 * GRID_SIZE;
+                frog.targetY = 12 * GRID_SIZE;
+                frog.isMoving = false;
+                frog.moveProgress = 0;
+                
+                // Penalty for dying
+                score = Math.max(0, score - 50);
+            }
+        }
+
+        function update() {
+            if (currentState === STATE.PLAYING) {
+                frameCount++;
+
+                // Update frog movement with interpolation
+                if (frog.isMoving) {
+                    frog.moveProgress++;
+                    const t = frog.moveProgress / frog.moveDuration;
+                    
+                    // Smooth interpolation (ease-in-out)
+                    const easeT = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+                    
+                    frog.x = frog.x + (frog.targetX - frog.x) * easeT;
+                    frog.y = frog.y + (frog.targetY - frog.y) * easeT;
+                    
+                    if (frog.moveProgress >= frog.moveDuration) {
+                        frog.x = frog.targetX;
+                        frog.y = frog.targetY;
+                        frog.isMoving = false;
+                        frog.moveProgress = 0;
+                    }
+                }
+
+                // Update vehicles
+                vehicles.forEach(v => {
+                    v.x += v.speed;
+                    // Wrap around
+                    if (v.speed > 0 && v.x > CANVAS_WIDTH) {
+                        v.x = -v.width;
+                    } else if (v.speed < 0 && v.x + v.width < 0) {
+                        v.x = CANVAS_WIDTH;
+                    }
+                });
+
+                // Update logs
+                logs.forEach(l => {
+                    l.x += l.speed;
+                    if (l.speed > 0 && l.x > CANVAS_WIDTH) {
+                        l.x = -l.width;
+                    } else if (l.speed < 0 && l.x + l.width < 0) {
+                        l.x = CANVAS_WIDTH;
+                    }
+                });
+
+                // Update turtles
+                turtles.forEach(t => {
+                    t.x += t.speed;
+                    if (t.speed > 0 && t.x > CANVAS_WIDTH) {
+                        t.x = -t.width;
+                    } else if (t.speed < 0 && t.x + t.width < 0) {
+                        t.x = CANVAS_WIDTH;
+                    }
+                });
+
+                // Collision detection with vehicles
+                const frogRect = {
+                    x: frog.x + frog.offsetX,
+                    y: frog.y + frog.offsetY,
+                    width: frog.width,
+                    height: frog.height
+                };
+
+                let onLogOrTurtle = false;
+
+                // Check vehicle collisions
+                for (let v of vehicles) {
+                    const vRect = {
+                        x: v.x,
+                        y: v.y + 5,
+                        width: v.width,
+                        height: v.height
+                    };
+                    
+                    if (rectIntersect(frogRect, vRect)) {
+                        handleDeath();
+                        return;
+                    }
+                }
+
+                // Check log/turtle collisions and movement
+                let currentRiverSpeed = 0;
+                const isOnWater = frog.y >= GRID_SIZE && frog.y <= 6 * GRID_SIZE;
+                
+                if (isOnWater) {
+                    // Check logs
+                    for (let l of logs) {
+                        const lRect = {
+                            x: l.x,
+                            y: l.y + 5,
+                            width: l.width,
+                            height: l.height
+                        };
+                        if (rectIntersect(frogRect, lRect)) {
+                            onLogOrTurtle = true;
+                            currentRiverSpeed = l.speed;
+                            
+                            // Create log ride particles
+                            if (frameCount % 5 === 0) {
+                                createParticles(
+                                    frog.x + frog.width/2 + (Math.random() - 0.5) * frog.width,
+                                    frog.y + frog.height,
+                                    '#8D6E63',
+                                    'log_ride',
+                                    1
+                                );
+                            }
+                            break;
+                        }
+                    }
+                    
+                    // Check turtles if not on log
+                    if (!onLogOrTurtle) {
+                        for (let t of turtles) {
+                            const tRect = {
+                                x: t.x,
+                                y: t.y + 5,
+                                width: t.width,
+                                height: t.height
+                            };
+                            if (rectIntersect(frogRect, tRect)) {
+                                onLogOrTurtle = true;
+                                currentRiverSpeed = t.speed;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (isOnWater && !onLogOrTurtle) {
+                    // Frog fell in water
+                    handleDeath();
+                    return;
+                }
+
+                // Move frog with log/turtle (continuous movement)
+                if (onLogOrTurtle && isOnWater) {
+                    // Only move if not currently executing a player input move
+                    if (!frog.isMoving) {
+                        frog.x += currentRiverSpeed;
+                    }
+                    
+                    // Check if frog fell off screen
+                    if (frog.x < -frog.width || frog.x > CANVAS_WIDTH) {
+                        handleDeath();
+                    }
+                }
+            } else if (currentState === STATE.LEVEL_TRANSITION) {
+                transitionTimer--;
+                if (transitionTimer <= 0) {
+                    resetLevel();
+                    currentState = STATE.PLAYING;
+                }
+            }
+            
+            // Update particles
+            updateParticles();
+        }
+
+        function rectIntersect(r1, r2) {
+            return !(r2.x > r1.x + r1.width || 
+                     r2.x + r2.width < r1.x || 
+                     r2.y > r1.y + r1.height || 
+                     r2.y + r2.height < r1.y);
+        }
+
+        function draw() {
+            // Clear canvas
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+            if (currentState === STATE.MENU) {
+                drawMenu();
+            } else if (currentState === STATE.PLAYING || currentState === STATE.LEVEL_TRANSITION) {
+                drawGame();
+                drawHUD();
+                
+                if (currentState === STATE.LEVEL_TRANSITION) {
+                    drawLevelTransition();
+                }
+            } else if (currentState === STATE.GAME_OVER) {
+                drawGame();
+                drawHUD();
+                drawGameOver();
+            } else if (currentState === STATE.VICTORY) {
+                drawGame();
+                drawHUD();
+                drawVictory();
+            }
+            
+            // Draw particles
+            drawParticles();
+        }
+
+        function drawMenu() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            
+            // Title
+            ctx.fillStyle = '#4CAF50';
+            ctx.font = 'bold 48px Courier New';
+            ctx.textAlign = 'center';
+            ctx.fillText('FROGGER', CANVAS_WIDTH / 2, 200);
+            
+            ctx.fillStyle = '#FFF';
+            ctx.font = '24px Courier New';
+            ctx.fillText('Arrow Keys to Move', CANVAS_WIDTH / 2, 300);
+            ctx.fillText('Dodge Vehicles & Ride Logs!', CANVAS_WIDTH / 2, 340);
+            
+            // Blinking start text
+            if (Math.floor(frameCount / 30) % 2 === 0) {
+                ctx.fillStyle = '#FFEB3B';
+                ctx.font = '28px Courier New';
+                ctx.fillText('PRESS ENTER TO START', CANVAS_WIDTH / 2, 450);
+            }
+            
+            // Draw a sample frog
+            ctx.fillStyle = '#4CAF50';
+            ctx.fillRect(CANVAS_WIDTH / 2 - 25, 500, 50, 50);
+        }
+
+        function drawGame() {
+            // Draw background lanes
+            
+            // Home area (Row 0)
+            ctx.fillStyle = '#2E7D32';
+            ctx.fillRect(0, 0, CANVAS_WIDTH, GRID_SIZE);
+            
+            // Draw home slots
+            for (let i = 0; i < COLS; i++) {
+                if (i % 2 === 0) {
+                    ctx.fillStyle = '#1B5E20';
+                    ctx.fillRect(i * GRID_SIZE, 0, GRID_SIZE, GRID_SIZE);
+                }
+            }
+            
+            // Draw water lanes
+            const waterRows = [1, 2, 4, 5, 6];
+            waterRows.forEach(row => {
+                ctx.fillStyle = '#1976D2';
+                ctx.fillRect(0, row * GRID_SIZE, CANVAS_WIDTH, GRID_SIZE);
+                
+                // Water effect
+                ctx.fillStyle = '#2196F3';
+                for (let x = (frameCount * 2 + row * 50) % GRID_SIZE; x < CANVAS_WIDTH; x += GRID_SIZE * 2) {
+                    ctx.fillRect(x, row * GRID_SIZE + 15, GRID_SIZE, 5);
+                    ctx.fillRect(x + 25, row * GRID_SIZE + 30, GRID_SIZE, 5);
+                }
+            });
+            
+            // Draw safe medians
+            const safeRows = [3, 7];
+            safeRows.forEach(row => {
+                ctx.fillStyle = '#795548';
+                ctx.fillRect(0, row * GRID_SIZE, CANVAS_WIDTH, GRID_SIZE);
+                // Grass on top
+                ctx.fillStyle = '#4CAF50';
+                ctx.fillRect(0, row * GRID_SIZE, CANVAS_WIDTH, 10);
+            });
+            
+            // Draw road lanes
+            const roadRows = [8, 9, 10, 11];
+            roadRows.forEach(row => {
+                ctx.fillStyle = '#424242';
+                ctx.fillRect(0, row * GRID_SIZE, CANVAS_WIDTH, GRID_SIZE);
+                
+                // Road markings
+                ctx.fillStyle = '#FFEB3B';
+                for (let x = (frameCount * 3 + row * 30) % (GRID_SIZE * 2); x < CANVAS_WIDTH; x += GRID_SIZE * 2) {
+                    ctx.fillRect(x, row * GRID_SIZE + GRID_SIZE/2 - 2, GRID_SIZE, 4);
+                }
+            });
+            
+            // Draw start area (Row 12)
+            ctx.fillStyle = '#333';
+            ctx.fillRect(0, 12 * GRID_SIZE, CANVAS_WIDTH, GRID_SIZE);
+            ctx.fillStyle = '#4CAF50';
+            ctx.font = '16px Courier New';
+            ctx.textAlign = 'center';
+            ctx.fillText('START', CANVAS_WIDTH / 2, 12 * GRID_SIZE + 30);
+
+            // Draw logs
+            logs.forEach(l => {
+                ctx.fillStyle = l.color;
+                ctx.fillRect(l.x, l.y + 5, l.width, l.height);
+                // Log details
+                ctx.fillStyle = '#6D4C41';
+                ctx.fillRect(l.x + 5, l.y + 10, l.width - 10, 5);
+                ctx.fillRect(l.x + 5, l.y + 30, l.width - 10, 5);
+            });
+
+            // Draw turtles
+            turtles.forEach(t => {
+                ctx.fillStyle = t.color;
+                // Draw turtle shell
+                ctx.beginPath();
+                ctx.ellipse(t.x + t.width/2, t.y + t.height/2 + 5, t.width/2, t.height/2 - 5, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Turtle head and legs
+                ctx.fillStyle = '#388E3C';
+                if (t.speed > 0) {
+                    // Moving right
+                    ctx.beginPath();
+                    ctx.arc(t.x + t.width + 5, t.y + t.height/2 + 5, 8, 0, Math.PI * 2);
+                    ctx.fill();
+                } else {
+                    // Moving left
+                    ctx.beginPath();
+                    ctx.arc(t.x - 5, t.y + t.height/2 + 5, 8, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+
+            // Draw vehicles
+            vehicles.forEach(v => {
+                ctx.fillStyle = v.color;
+                
+                if (v.type === 'car') {
+                    // Car shape
+                    ctx.fillRect(v.x, v.y + 5, v.width, v.height);
+                    // Windows
+                    ctx.fillStyle = '#BBDEFB';
+                    if (v.speed > 0) {
+                        ctx.fillRect(v.x + v.width - 15, v.y + 10, 10, v.height - 20);
+                    } else {
+                        ctx.fillRect(v.x + 5, v.y + 10, 10, v.height - 20);
+                    }
+                } else if (v.type === 'truck') {
+                    // Truck shape
+                    ctx.fillRect(v.x, v.y + 5, v.width, v.height);
+                    // Cab
+                    ctx.fillStyle = '#FFE0B2';
+                    if (v.speed > 0) {
+                        ctx.fillRect(v.x + v.width - 20, v.y + 5, 20, v.height);
+                    } else {
+                        ctx.fillRect(v.x, v.y + 5, 20, v.height);
+                    }
+                } else {
+                    // Bus shape
+                    ctx.fillRect(v.x, v.y + 5, v.width, v.height);
+                    // Windows
+                    ctx.fillStyle = '#FFF9C4';
+                    for (let wx = v.speed > 0 ? v.x + 10 : v.x + 5; wx < v.x + v.width - 10; wx += 15) {
+                        ctx.fillRect(wx, v.y + 12, 10, v.height - 24);
+                    }
+                }
+            });
+
+            // Draw frog
+            drawFrog();
+        }
+
+        function drawFrog() {
+            const fx = frog.x + frog.offsetX;
+            const fy = frog.y + frog.offsetY;
+            
+            // Frog body
+            ctx.fillStyle = frog.color;
+            ctx.fillRect(fx, fy, frog.width, frog.height);
+            
+            // Frog eyes
+            ctx.fillStyle = '#FFF';
+            ctx.fillRect(fx + 5, fy + 5, 12, 12);
+            ctx.fillRect(fx + frog.width - 17, fy + 5, 12, 12);
+            
+            ctx.fillStyle = '#000';
+            ctx.fillRect(fx + 9, fy + 9, 4, 4);
+            ctx.fillRect(fx + frog.width - 13, fy + 9, 4, 4);
+            
+            // Frog legs
+            ctx.fillStyle = frog.color;
+            // Front legs
+            ctx.fillRect(fx + 2, fy + frog.height - 8, 12, 8);
+            ctx.fillRect(fx + frog.width - 14, fy + frog.height - 8, 12, 8);
+            // Back legs
+            ctx.fillRect(fx + 5, fy + frog.height - 2, 10, 2);
+            ctx.fillRect(fx + frog.width - 15, fy + frog.height - 2, 10, 2);
+        }
+
+        function drawHUD() {
+            // Score
+            ctx.fillStyle = '#FFF';
+            ctx.font = '20px Courier New';
+            ctx.textAlign = 'left';
+            ctx.fillText(`SCORE: ${score}`, 10, 30);
+            
+            // Level
+            ctx.textAlign = 'center';
+            ctx.fillText(`LEVEL ${currentLevel}`, CANVAS_WIDTH / 2, 30);
+            
+            // Lives
+            ctx.textAlign = 'right';
+            ctx.fillText(`LIVES: ${lives}`, CANVAS_WIDTH - 10, 30);
+            
+            // Draw life icons
+            for (let i = 0; i < lives - 1; i++) {
+                ctx.fillStyle = '#4CAF50';
+                ctx.fillRect(CANVAS_WIDTH - 30 - (i * 25), 10, 20, 20);
+            }
+        }
+
+        function drawLevelTransition() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            
+            ctx.fillStyle = '#FFEB3B';
+            ctx.font = 'bold 36px Courier New';
+            ctx.textAlign = 'center';
+            ctx.fillText(`LEVEL ${currentLevel} COMPLETE!`, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+        }
+
+        function drawGameOver() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            
+            ctx.fillStyle = '#F44336';
+            ctx.font = 'bold 48px Courier New';
+            ctx.textAlign = 'center';
+            ctx.fillText('GAME OVER', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 50);
+            
+            ctx.fillStyle = '#FFF';
+            ctx.font = '24px Courier New';
+            ctx.fillText(`FINAL SCORE: ${score}`, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 20);
+            
+            if (Math.floor(frameCount / 30) % 2 === 0) {
+                ctx.fillStyle = '#FFEB3B';
+                ctx.font = '20px Courier New';
+                ctx.fillText('PRESS ENTER TO RETURN TO MENU', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 80);
+            }
+        }
+
+        function drawVictory() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            
+            ctx.fillStyle = '#4CAF50';
+            ctx.font = 'bold 48px Courier New';
+            ctx.textAlign = 'center';
+            ctx.fillText('VICTORY!', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 50);
+            
+            ctx.fillStyle = '#FFEB3B';
+            ctx.font = '28px Courier New';
+            ctx.fillText(`FINAL SCORE: ${score}`, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 20);
+            
+            if (Math.floor(frameCount / 30) % 2 === 0) {
+                ctx.fillStyle = '#FFF';
+                ctx.font = '20px Courier New';
+                ctx.fillText('PRESS ENTER TO RETURN TO MENU', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 80);
+            }
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            frameCount++;
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the game loop
+        gameLoop();
+    </script>
+</body>
+</html>

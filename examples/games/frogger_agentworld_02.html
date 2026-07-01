@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frogger - Browser Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #222;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Courier New', Courier, monospace;
+            color: white;
+            overflow: hidden;
+        }
+        #game-container {
+            position: relative;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        canvas {
+            background-color: #000;
+            display: block;
+        }
+        #ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 10;
+        }
+        .hidden {
+            display: none !important;
+        }
+        h1 {
+            color: #4CAF50;
+            font-size: 48px;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px #000;
+        }
+        h2 {
+            color: #FFC107;
+            font-size: 32px;
+            margin-bottom: 20px;
+        }
+        p {
+            font-size: 18px;
+            margin-bottom: 30px;
+            text-align: center;
+            max-width: 600px;
+            line-height: 1.5;
+        }
+        button {
+            padding: 15px 30px;
+            font-size: 24px;
+            font-family: 'Courier New', Courier, monospace;
+            font-weight: bold;
+            color: #fff;
+            background-color: #4CAF50;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #hud {
+            position: absolute;
+            top: 10px;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 20px;
+            box-sizing: border-box;
+            font-size: 20px;
+            font-weight: bold;
+            pointer-events: none;
+            z-index: 5;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas" width="600" height="700"></canvas>
+    
+    <div id="hud">
+        <div id="score-display">SCORE: 0</div>
+        <div id="level-display">LEVEL: 1</div>
+        <div id="lives-display">LIVES: 3</div>
+    </div>
+
+    <div id="ui-overlay">
+        <h1 id="title-text">FROGGER</h1>
+        <p id="instructions-text">
+            Use ARROW KEYS to move.<br>
+            Cross the road to avoid cars.<br>
+            Ride the logs/turtles across the river.<br>
+            Reach the top green slots to advance!
+        </p>
+        <button id="start-btn">START GAME</button>
+    </div>
+</div>
+
+<script>
+/**
+ * FROGGER GAME IMPLEMENTATION
+ */
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const uiOverlay = document.getElementById('ui-overlay');
+const titleText = document.getElementById('title-text');
+const instructionsText = document.getElementById('instructions-text');
+const startBtn = document.getElementById('start-btn');
+const scoreDisplay = document.getElementById('score-display');
+const levelDisplay = document.getElementById('level-display');
+const livesDisplay = document.getElementById('lives-display');
+
+// Game Constants
+const GRID_SIZE = 50;
+const COLS = 12; // 600 / 50
+const ROWS = 14; // 700 / 50
+
+// Colors
+const COLOR_BG_ROAD = '#333333';
+const COLOR_BG_RIVER = '#000066';
+const COLOR_BG_GRASS = '#228B22';
+const COLOR_FROG = '#00FF00';
+const COLOR_GOAL_SLOTS = '#004400';
+const COLOR_GOAL_ACTIVE = '#00FF00';
+
+// Game State Variables
+let gameState = 'MENU'; // MENU, PLAYING, GAME_OVER, VICTORY
+let score = 0;
+let lives = 3;
+let currentLevel = 1;
+let frameCount = 0;
+
+// Frog Object
+const frog = {
+    x: 6 * GRID_SIZE, // Start in the middle column
+    y: 13 * GRID_SIZE, // Start at the bottom
+    width: GRID_SIZE - 10,
+    height: GRID_SIZE - 10,
+    dx: 0,
+    dy: 0,
+    onLog: false,
+    logIndex: -1,
+    dead: false
+};
+
+// Entities Arrays
+let cars = [];
+let logs = [];
+
+// Level Configurations
+const LEVELS = {
+    1: {
+        roadSpeed: 2,
+        roadDensity: 3, // cars per lane
+        riverSpeed: 1.5,
+        riverDensity: 3, // logs per lane
+        logLengthMin: 2,
+        logLengthMax: 4
+    },
+    2: {
+        roadSpeed: 3.5,
+        roadDensity: 4,
+        riverSpeed: 2.5,
+        riverDensity: 4,
+        logLengthMin: 2,
+        logLengthMax: 3
+    }
+};
+
+// Lane Definitions (Row Index from top 0 to 13)
+// Row 0: Goals
+// Row 1-3: River
+// Row 4: Safe Zone (Mediana)
+// Row 5-9: Road
+// Row 10-12: Safe Zone (Start)
+// Row 13: Start Line
+
+const LANE_ROAD = [5, 6, 7, 8, 9];
+const LANE_RIVER = [1, 2, 3];
+const LANE_GOAL = [0];
+const LANE_SAFE_START = [11, 12, 13]; // Includes start line
+
+// Input Handling
+const keys = {
+    ArrowUp: false,
+    ArrowDown: false,
+    ArrowLeft: false,
+    ArrowRight: false
+};
+
+document.addEventListener('keydown', (e) => {
+    if(keys.hasOwnProperty(e.code)) {
+        keys[e.code] = true;
+        e.preventDefault();
+    }
+    if (gameState === 'PLAYING' && !frog.dead) {
+        handleFrogMovement(e.code);
+    }
+});
+
+document.addEventListener('keyup', (e) => {
+    if(keys.hasOwnProperty(e.code)) {
+        keys[e.code] = false;
+    }
+});
+
+startBtn.addEventListener('click', () => {
+    if (gameState === 'MENU' || gameState === 'GAME_OVER' || gameState === 'VICTORY') {
+        resetGame();
+        startGame();
+    }
+});
+
+function handleFrogMovement(code) {
+    const step = GRID_SIZE;
+    if (code === 'ArrowUp') frog.y -= step;
+    else if (code === 'ArrowDown') frog.y += step;
+    else if (code === 'ArrowLeft') frog.x -= step;
+    else if (code === 'ArrowRight') frog.x += step;
+
+    // Clamp frog to canvas
+    frog.x = Math.max(0, Math.min(frog.x, canvas.width - GRID_SIZE));
+    frog.y = Math.max(0, Math.min(frog.y, canvas.height - GRID_SIZE));
+}
+
+function resetGame() {
+    score = 0;
+    lives = 3;
+    currentLevel = 1;
+    resetFrog();
+    updateHUD();
+}
+
+function startGame() {
+    gameState = 'PLAYING';
+    uiOverlay.classList.add('hidden');
+    resetLevelEntities();
+    loop();
+}
+
+function resetFrog() {
+    frog.x = 6 * GRID_SIZE;
+    frog.y = 13 * GRID_SIZE;
+    frog.dead = false;
+    frog.onLog = false;
+    frog.logIndex = -1;
+}
+
+function resetLevelEntities() {
+    cars = [];
+    logs = [];
+    
+    const config = LEVELS[currentLevel];
+
+    // Generate Road Cars
+    // Lanes: 5, 6, 7, 8, 9
+    // Directions alternate: Right, Left, Right, Left, Right
+    const roadDirections = [1, -1, 1, -1, 1]; 
+    
+    LANE_ROAD.forEach((row, index) => {
+        const speed = config.roadSpeed + (currentLevel === 2 ? 1 : 0); // Base speed adjustment handled in config usually, but let's stick to config
+        const dir = roadDirections[index % 5];
+        const density = config.roadDensity;
+        
+        // Create cars
+        for(let i=0; i<density; i++) {
+            cars.push({
+                x: dir === 1 ? -GRID_SIZE * (i + 1) : canvas.width + GRID_SIZE * (i + 1),
+                y: row * GRID_SIZE,
+                width: GRID_SIZE,
+                height: GRID_SIZE - 10,
+                speed: speed * dir,
+                color: dir === 1 ? '#FF4444' : '#4444FF' // Red for right, Blue for left
+            });
+        }
+    });
+
+    // Generate River Logs
+    // Lanes: 1, 2, 3
+    // Directions alternate: Left, Right, Left
+    const riverDirections = [-1, 1, -1];
+
+    LANE_RIVER.forEach((row, index) => {
+        const speed = config.riverSpeed;
+        const dir = riverDirections[index % 3];
+        const density = config.riverDensity;
+
+        for(let i=0; i<density; i++) {
+            const len = Math.floor(Math.random() * (config.logLengthMax - config.logLengthMin + 1)) + config.logLengthMin;
+            logs.push({
+                x: dir === 1 ? -GRID_SIZE * (len + i * 3) : canvas.width + GRID_SIZE * (i * 3),
+                y: row * GRID_SIZE,
+                width: len * GRID_SIZE,
+                height: GRID_SIZE - 10,
+                speed: speed * dir,
+                type: 'log'
+            });
+        }
+    });
+}
+
+function updateHUD() {
+    scoreDisplay.textContent = `SCORE: ${score}`;
+    levelDisplay.textContent = `LEVEL: ${currentLevel}`;
+    livesDisplay.textContent = `LIVES: ${lives}`;
+}
+
+function showGameOver() {
+    gameState = 'GAME_OVER';
+    uiOverlay.classList.remove('hidden');
+    titleText.textContent = "GAME OVER";
+    titleText.style.color = "red";
+    instructionsText.innerHTML = `Final Score: ${score}<br>Level Reached: ${currentLevel}`;
+    startBtn.textContent = "TRY AGAIN";
+}
+
+function showVictory() {
+    gameState = 'VICTORY';
+    uiOverlay.classList.remove('hidden');
+    titleText.textContent = "VICTORY!";
+    titleText.style.color = "#FFD700";
+    instructionsText.innerHTML = `You completed all levels!<br>Final Score: ${score}`;
+    startBtn.textContent = "PLAY AGAIN";
+}
+
+function nextLevel() {
+    if (currentLevel === 1) {
+        currentLevel = 2;
+        resetFrog();
+        resetLevelEntities();
+        updateHUD();
+        // Small pause or effect could go here
+    } else {
+        showVictory();
+    }
+}
+
+function loseLife() {
+    lives--;
+    updateHUD();
+    if (lives <= 0) {
+        showGameOver();
+    } else {
+        resetFrog();
+        // Optional: reset position on river if died there? 
+        // Standard frogger usually resets to start of level or specific safe spot.
+        // Let's reset to start position for simplicity and fairness.
+    }
+}
+
+function checkCollisions() {
+    if (frog.dead) return;
+
+    // 1. Check Goal Slots
+    if (frog.y === 0 * GRID_SIZE) {
+        // Check if frog is in a valid goal slot
+        // Goal slots are typically at specific x positions or just any x in row 0?
+        // In classic frogger, there are specific "holes". 
+        // Let's assume any x in row 0 is a goal for this simplified version, 
+        // but to make it fair, let's say the goal slots are at x: 50, 150, 250, 350, 450, 550 (indices 1,3,5,7,9,11)
+        // Actually, let's just make the whole row 0 the goal area for simplicity, 
+        // or check specific columns.
+        
+        const col = Math.round(frog.x / GRID_SIZE);
+        // Valid goal columns: 1, 3, 5, 7, 9, 11 (0-indexed) -> Wait, 12 cols. Indices 0 to 11.
+        // Let's say valid goals are at indices 1, 3, 5, 7, 9, 11.
+        if ([1, 3, 5, 7, 9, 11].includes(col)) {
+            score += 100 * currentLevel;
+            nextLevel();
+            return;
+        } else {
+            // Hit a wall or invalid goal spot -> bounce back or lose life?
+            // Let's just treat it as a miss and send frog back to start or just lose life?
+            // Standard frogger: you must hit the specific slot. If you hit the solid grass, you bounce back.
+            // For this version, let's say if you hit row 0 but not in a slot, you bounce back to row 2.
+            frog.y = 2 * GRID_SIZE;
+            return;
+        }
+    }
+
+    // 2. Check River Death (Drowning)
+    if (frog.y >= 1 * GRID_SIZE && frog.y <= 3 * GRID_SIZE) {
+        // Check if on a log
+        let onSafeLog = false;
+        logs.forEach((log, index) => {
+            if (isColliding(frog, log)) {
+                onSafeLog = true;
+                frog.logIndex = index;
+                frog.onLog = true;
+            }
+        });
+
+        if (!onSafeLog) {
+            loseLife();
+            return;
+        }
+    } else {
+        frog.onLog = false;
+        frog.logIndex = -1;
+    }
+
+    // 3. Check Car Collisions
+    cars.forEach(car => {
+        if (isColliding(frog, car)) {
+            loseLife();
+        }
+    });
+
+    // 4. Check River Bounds (Swimming in water without log)
+    // Already handled by "Check River Death" logic above (if not on log in river rows, die)
+    
+    // 5. Move with Log
+    if (frog.onLog && frog.logIndex !== -1) {
+        const log = logs[frog.logIndex];
+        frog.x += log.speed;
+        
+        // Wrap around or reset if off screen
+        if (log.speed > 0 && frog.x > canvas.width) {
+            frog.x = -frog.width;
+        } else if (log.speed < 0 && frog.x < -frog.width) {
+            frog.x = canvas.width;
+        }
+    }
+}
+
+function isColliding(rect1, rect2) {
+    // Adjust collision box slightly to be forgiving
+    const padding = 5;
+    return (
+        rect1.x + padding < rect2.x + rect2.width - padding &&
+        rect1.x + rect1.width - padding > rect2.x + padding &&
+        rect1.y + padding < rect2.y + rect2.height - padding &&
+        rect1.y + rect1.height - padding > rect2.y + padding
+    );
+}
+
+function update() {
+    if (gameState !== 'PLAYING') return;
+
+    frameCount++;
+
+    // Update Cars
+    cars.forEach(car => {
+        car.x += car.speed;
+        // Wrap cars
+        if (car.speed > 0 && car.x > canvas.width) {
+            car.x = -car.width;
+        } else if (car.speed < 0 && car.x + car.width < 0) {
+            car.x = canvas.width;
+        }
+    });
+
+    // Update Logs
+    logs.forEach(log => {
+        log.x += log.speed;
+        // Wrap logs
+        if (log.speed > 0 && log.x > canvas.width) {
+            log.x = -log.width;
+        } else if (log.speed < 0 && log.x + log.width < 0) {
+            log.x = canvas.width;
+        }
+    });
+
+    checkCollisions();
+}
+
+function draw() {
+    // Clear Canvas
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Draw Backgrounds
+    // Goal Row (0)
+    ctx.fillStyle = COLOR_BG_GRASS;
+    ctx.fillRect(0, 0, canvas.width, GRID_SIZE);
+    
+    // River (1-3)
+    ctx.fillStyle = COLOR_BG_RIVER;
+    ctx.fillRect(0, GRID_SIZE, canvas.width, GRID_SIZE * 3);
+
+    // Safe Zone (4)
+    ctx.fillStyle = COLOR_BG_GRASS;
+    ctx.fillRect(0, GRID_SIZE * 4, canvas.width, GRID_SIZE);
+
+    // Road (5-9)
+    ctx.fillStyle = COLOR_BG_ROAD;
+    ctx.fillRect(0, GRID_SIZE * 5, canvas.width, GRID_SIZE * 5);
+
+    // Safe Zone (10-12)
+    ctx.fillStyle = COLOR_BG_GRASS;
+    ctx.fillRect(0, GRID_SIZE * 10, canvas.width, GRID_SIZE * 3);
+
+    // Draw Goal Slots
+    ctx.fillStyle = COLOR_GOAL_SLOTS;
+    const goalCols = [1, 3, 5, 7, 9, 11];
+    goalCols.forEach(col => {
+        ctx.fillRect(col * GRID_SIZE + 5, 5 + GRID_SIZE, GRID_SIZE - 10, GRID_SIZE - 10);
+    });
+
+    // Draw Logs
+    logs.forEach(log => {
+        ctx.fillStyle = '#8B4513'; // SaddleBrown
+        ctx.fillRect(log.x, log.y + 5, log.width, log.height);
+        // Log details
+        ctx.fillStyle = '#A0522D';
+        ctx.fillRect(log.x + 5, log.y + 10, 10, 10);
+        ctx.fillRect(log.x + log.width - 15, log.y + 10, 10, 10);
+    });
+
+    // Draw Cars
+    cars.forEach(car => {
+        ctx.fillStyle = car.color;
+        // Car body
+        ctx.fillRect(car.x, car.y + 5, car.width, car.height);
+        // Car details (windows)
+        ctx.fillStyle = '#ADD8E6';
+        if (car.speed > 0) {
+            // Moving right
+            ctx.fillRect(car.x + car.width - 15, car.y + 10, 10, 20);
+        } else {
+            // Moving left
+            ctx.fillRect(car.x + 5, car.y + 10, 10, 20);
+        }
+    });
+
+    // Draw Frog
+    if (!frog.dead) {
+        ctx.fillStyle = COLOR_FROG;
+        const fx = frog.x + 5;
+        const fy = frog.y + 5;
+        const fw = frog.width;
+        const fh = frog.height;
+
+        // Body
+        ctx.fillRect(fx, fy, fw, fh);
+        
+        // Eyes
+        ctx.fillStyle = '#000';
+        ctx.fillRect(fx + 5, fy + 5, 10, 10);
+        ctx.fillRect(fx + fw - 15, fy + 5, 10, 10);
+        
+        // Legs (simple representation)
+        ctx.fillStyle = '#00FF00';
+        ctx.fillRect(fx - 2, fy + 10, 5, 10);
+        ctx.fillRect(fx + fw - 3, fy + 10, 5, 10);
+        ctx.fillRect(fx - 2, fy + 30, 5, 10);
+        ctx.fillRect(fx + fw - 3, fy + 30, 5, 10);
+    }
+}
+
+function loop() {
+    if (gameState === 'PLAYING') {
+        update();
+        draw();
+        requestAnimationFrame(loop);
+    } else if (gameState === 'GAME_OVER' || gameState === 'VICTORY') {
+        draw(); // Draw final state
+    }
+}
+
+// Initial Draw
+function init() {
+    // Draw static background for menu
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Draw some static elements to look like the game
+    ctx.fillStyle = COLOR_BG_GRASS;
+    ctx.fillRect(0, 0, canvas.width, GRID_SIZE);
+    ctx.fillRect(0, GRID_SIZE * 4, canvas.width, GRID_SIZE);
+    ctx.fillRect(0, GRID_SIZE * 10, canvas.width, GRID_SIZE * 4);
+    
+    ctx.fillStyle = COLOR_BG_RIVER;
+    ctx.fillRect(0, GRID_SIZE, canvas.width, GRID_SIZE * 3);
+    
+    ctx.fillStyle = COLOR_BG_ROAD;
+    ctx.fillRect(0, GRID_SIZE * 5, canvas.width, GRID_SIZE * 5);
+
+    updateHUD();
+}
+
+init();
+
+</script>
+</body>
+</html>
