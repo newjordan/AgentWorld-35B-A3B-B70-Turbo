@@ -1,0 +1,6 @@
+# AgentWorld quant game-quality — Claude source-review /50 (playability, not just jsdom)
+# same BF16 + same imatrix; only bit-width varies. serve: q8_0 KV, c=131072, np=6.
+build,frogger_50,maze_50,frogger_bytes,maze_notes
+Q6_K_run1,34,40,15000,working shooter · functional exit · fully connected
+Q6_K_run2,35,40,28000,working shooter · functional exit · connected
+Q5_K_M,34,40,19000,working shooter · functional exit · connected

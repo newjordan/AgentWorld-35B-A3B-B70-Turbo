@@ -1,0 +1,10 @@
+benchmark,score_pct,n_tasks
+GSM8K,97.0,200
+HellaSwag,81.9,1000
+Winogrande,75.6,1000
+ARC-Challenge,55.2,299
+MMLU,41.5,2000
+TruthfulQA-MC1,37.6,817
+Wikitext2-PPL,5.96,100chunks
+# note: PPL is perplexity (lower=better), not a %. GSM8K here is the agentic-arcade
+# lm-eval config (CoT); an earlier handoff harness (strict-extract) scored GSM8K 58.5 — re-run for final.

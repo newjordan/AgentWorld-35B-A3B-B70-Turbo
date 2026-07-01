@@ -1,0 +1,69 @@
+<svg width="860" height="460" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" baseProfile="full" viewBox="0 0 860 460">
+<rect width="860" height="460" x="0" y="0" fill="#0d1117"></rect>
+<path d="M79.4 382.5L826 382.5" fill="none" pointer-events="visible" stroke="#21262d" stroke-dasharray="4,2" class="zr5-cls-33"></path>
+<path d="M79.4 325.5L826 325.5" fill="none" pointer-events="visible" stroke="#21262d" stroke-dasharray="4,2" class="zr5-cls-33"></path>
+<path d="M79.4 267.5L826 267.5" fill="none" pointer-events="visible" stroke="#21262d" stroke-dasharray="4,2" class="zr5-cls-33"></path>
+<path d="M79.4 210.5L826 210.5" fill="none" pointer-events="visible" stroke="#21262d" stroke-dasharray="4,2" class="zr5-cls-33"></path>
+<path d="M79.4 153.5L826 153.5" fill="none" pointer-events="visible" stroke="#21262d" stroke-dasharray="4,2" class="zr5-cls-33"></path>
+<path d="M79.4 96.5L826 96.5" fill="none" pointer-events="visible" stroke="#21262d" stroke-dasharray="4,2" class="zr5-cls-33"></path>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:12px;font-family:-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;" xml:space="preserve" y="-6" transform="translate(79.44 82)" fill="#7d8590">score / 50</text>
+<path d="M79.4 382.5L826 382.5" fill="none" pointer-events="visible" stroke="#30363d" stroke-linecap="round" class="zr5-cls-33"></path>
+<text dominant-baseline="central" text-anchor="end" style="font-size:12px;font-family:-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;" transform="translate(71.44 382)" fill="#8b949e">0</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:12px;font-family:-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;" transform="translate(71.44 324.8)" fill="#8b949e">10</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:12px;font-family:-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;" transform="translate(71.44 267.6)" fill="#8b949e">20</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:12px;font-family:-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;" transform="translate(71.44 210.4)" fill="#8b949e">30</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:12px;font-family:-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;" transform="translate(71.44 153.2)" fill="#8b949e">40</text>
+<text dominant-baseline="central" text-anchor="end" style="font-size:12px;font-family:-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;" transform="translate(71.44 96)" fill="#8b949e">50</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:12px;font-family:-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;" y="6" transform="translate(266.08 390)" fill="#8b949e">Frogger</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:12px;font-family:-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;" y="6" transform="translate(639.36 390)" fill="#8b949e">Maze</text>
+<path d="M125.4 187.5L203.9 187.5A3 3 0 0 1 206.9 190.5L206.9 382L122.4 382L122.4 190.5A3 3 0 0 1 125.4 187.5Z" fill="#bc8cff" ecmeta_series_index="0" ecmeta_data_index="0" ecmeta_ssr_type="chart" class="zr5-cls-34"></path>
+<path d="M498.6 153.2L577.2 153.2A3 3 0 0 1 580.2 156.2L580.2 382L495.6 382L495.6 156.2A3 3 0 0 1 498.6 153.2Z" fill="#bc8cff" ecmeta_series_index="0" ecmeta_data_index="1" ecmeta_ssr_type="chart" class="zr5-cls-34"></path>
+<path d="M226.8 181.8L305.3 181.8A3 3 0 0 1 308.3 184.8L308.3 382L223.8 382L223.8 184.8A3 3 0 0 1 226.8 181.8Z" fill="#39c5cf" ecmeta_series_index="1" ecmeta_data_index="0" ecmeta_ssr_type="chart" class="zr5-cls-35"></path>
+<path d="M600.1 153.2L678.6 153.2A3 3 0 0 1 681.6 156.2L681.6 382L597.1 382L597.1 156.2A3 3 0 0 1 600.1 153.2Z" fill="#39c5cf" ecmeta_series_index="1" ecmeta_data_index="1" ecmeta_ssr_type="chart" class="zr5-cls-35"></path>
+<path d="M328.3 187.5L406.8 187.5A3 3 0 0 1 409.8 190.5L409.8 382L325.3 382L325.3 190.5A3 3 0 0 1 328.3 187.5Z" fill="#3fb950" ecmeta_series_index="2" ecmeta_data_index="0" ecmeta_ssr_type="chart" class="zr5-cls-36"></path>
+<path d="M701.5 153.2L780.1 153.2A3 3 0 0 1 783.1 156.2L783.1 382L698.5 382L698.5 156.2A3 3 0 0 1 701.5 153.2Z" fill="#3fb950" ecmeta_series_index="2" ecmeta_data_index="1" ecmeta_ssr_type="chart" class="zr5-cls-36"></path>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:11px;font-family:-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;" y="-5.5" transform="translate(164.6357 182.52)" fill="#8b949e">34</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:11px;font-family:-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;" y="-5.5" transform="translate(537.9157 148.2)" fill="#8b949e">40</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:11px;font-family:-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;" y="-5.5" transform="translate(266.08 176.8)" fill="#8b949e">35</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:11px;font-family:-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;" y="-5.5" transform="translate(639.36 148.2)" fill="#8b949e">40</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:11px;font-family:-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;" y="-5.5" transform="translate(367.5243 182.52)" fill="#8b949e">34</text>
+<text dominant-baseline="central" text-anchor="middle" style="font-size:11px;font-family:-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;" y="-5.5" transform="translate(740.8043 148.2)" fill="#8b949e">40</text>
+<path d="M-5 -5l304.6 0l0 22l-304.6 0Z" transform="translate(534.4 27)" fill="rgb(0,0,0)" fill-opacity="0" stroke="#b7b9be" stroke-width="0" class="zr5-cls-33"></path>
+<path d="M2 0L12 0A2 2 0 0 1 14 2L14 6A2 2 0 0 1 12 8L2 8A2 2 0 0 1 0 6L0 2A2 2 0 0 1 2 0Z" transform="translate(534.4 29)" fill="#bc8cff" ecmeta_series_index="0" ecmeta_data_index="0" ecmeta_ssr_type="legend" ecmeta_silent="true" class="zr5-cls-33"></path>
+<text dominant-baseline="central" text-anchor="start" style="font-size:12px;font-family:-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;" xml:space="preserve" x="19" y="4" transform="translate(534.4 29)" fill="#8b949e">Q6_K · run 1</text>
+<path d="M0 -2l96 0l0 12l-96 0Z" transform="translate(534.4 29)" fill="none" pointer-events="visible" ecmeta_series_index="0" ecmeta_data_index="0" ecmeta_ssr_type="legend" class="zr5-cls-37"></path>
+<path d="M2 0L12 0A2 2 0 0 1 14 2L14 6A2 2 0 0 1 12 8L2 8A2 2 0 0 1 0 6L0 2A2 2 0 0 1 2 0Z" transform="translate(648.44 29)" fill="#39c5cf" ecmeta_series_index="1" ecmeta_data_index="1" ecmeta_ssr_type="legend" ecmeta_silent="true" class="zr5-cls-33"></path>
+<text dominant-baseline="central" text-anchor="start" style="font-size:12px;font-family:-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;" xml:space="preserve" x="19" y="4" transform="translate(648.44 29)" fill="#8b949e">Q6_K · run 2</text>
+<path d="M0 -2l96 0l0 12l-96 0Z" transform="translate(648.44 29)" fill="none" pointer-events="visible" ecmeta_series_index="1" ecmeta_data_index="1" ecmeta_ssr_type="legend" class="zr5-cls-37"></path>
+<path d="M2 0L12 0A2 2 0 0 1 14 2L14 6A2 2 0 0 1 12 8L2 8A2 2 0 0 1 0 6L0 2A2 2 0 0 1 2 0Z" transform="translate(762.48 29)" fill="#3fb950" ecmeta_series_index="2" ecmeta_data_index="2" ecmeta_ssr_type="legend" ecmeta_silent="true" class="zr5-cls-33"></path>
+<text dominant-baseline="central" text-anchor="start" style="font-size:12px;font-family:-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;" x="19" y="4" transform="translate(762.48 29)" fill="#8b949e">Q5_K_M</text>
+<path d="M0 -2l66.5 0l0 12l-66.5 0Z" transform="translate(762.48 29)" fill="none" pointer-events="visible" ecmeta_series_index="2" ecmeta_data_index="2" ecmeta_ssr_type="legend" class="zr5-cls-37"></path>
+<path d="M-5 -5l539.1 0l0 54l-539.1 0Z" transform="translate(31 23)" fill="rgb(0,0,0)" fill-opacity="0" stroke="#3c3c41" stroke-width="0" class="zr5-cls-33"></path>
+<text dominant-baseline="central" text-anchor="start" style="font-size:18px;font-family:-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;font-weight:600;" xml:space="preserve" y="9" transform="translate(31 23)" fill="#e6edf3">AgentWorld · quant game-quality</text>
+<path d="M0 28l529.1 0l0 16l-529.1 0Z" transform="translate(31 23)" fill="none" pointer-events="visible" class="zr5-cls-33"></path>
+<text dominant-baseline="central" text-anchor="start" style="font-size:12px;font-family:-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;" xml:space="preserve" y="36" transform="translate(31 23)" fill="#7d8590">source-review /50 · agentic-arcade teamwork builds · Q5↔Q6 within run-to-run noise → ship Q5</text>
+<style ><![CDATA[
+.zr5-cls-33:hover {
+pointer-events:none;
+}
+.zr5-cls-34:hover {
+cursor:pointer;
+fill:rgba(206,154,255,1);
+}
+.zr5-cls-35:hover {
+cursor:pointer;
+fill:rgba(62,216,227,1);
+}
+.zr5-cls-36:hover {
+cursor:pointer;
+fill:rgba(69,203,88,1);
+}
+.zr5-cls-37:hover {
+cursor:pointer;
+fill:rgba(0,0,0,0);
+}
+
+]]>
+
+</style>
+</svg>
