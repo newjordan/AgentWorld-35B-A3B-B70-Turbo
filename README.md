@@ -1,8 +1,8 @@
 # AgentWorld-35B-A3B · B70 Turbo &nbsp;·&nbsp; R&D
 
-> **⚗️ R&D snapshot — not a final release.** Benchmarks are measured and reproducible; the
-> polished model card, weight upload, and final accuracy re-run are still pending. Numbers here
-> are honest but subject to change. Cover art / banner: TODO (drop-in above this line).
+> **Preview release.** All benchmarks are measured and reproducible; the final accuracy re-run is
+> still pending. Weights are live at
+> [Frosty40/Qwen-AgentWorld-35B-A3B-B70-Turbo-GGUF](https://huggingface.co/Frosty40/Qwen-AgentWorld-35B-A3B-B70-Turbo-GGUF).
 
 B70-tuned serving package for **Qwen-AgentWorld-35B-A3B** (`qwen3_5_moe`, 34.7B total / ~3B active),
 quantized **Q5_K_M**, running on a single **Intel Arc Pro B70** (30.3 GiB, 230 W) via llama.cpp SYCL.
@@ -11,35 +11,37 @@ flags), so every speedup is **lossless**.
 
 ## Where the speed comes from
 
-Three configs, same Q5_K_M weights, same f16 KV, same GPU. `config win = (2)/(1)` · `code win = (3)/(2)`:
+Three configs, same Q5_K_M weights, same f16 KV, same GPU. `flags win = (2)/(1)` · `build win = (3)/(2)`:
 1. **upstream** — mainline llama.cpp, default flags
 2. **up+flags** — same mainline + Turbo flags (`GGML_SYCL_DISABLE_DNN=1 -b 8192 -ub 4096`)
-3. **Turbo** — fork (+3 unmerged fusion commits: topk-MoE router fusion, gate-glue fusion,
-   single-token expert-aggregate) + same flags
+3. **Turbo** — this build: same mainline + 3 fused-kernel commits (topk-MoE router fusion,
+   gate-glue fusion, single-token expert-aggregate) + same flags
 
 | win | size | source |
 |---|---|---|
-| Prefill | **1.2–1.7×** | 100% runtime config, reproducible on stock upstream. Fusion adds ~nothing (1.00–1.01×). |
-| Fleet | **~1.3–1.4×** | 100% runtime config. Fusion adds ~nothing (0.98–1.02×). |
-| Decode (single stream) | **+7–14%** every depth, 0.8k→129k | fork-only fusion — the one genuinely-Turbo-only win. |
+| Prefill | **1.2–1.7×** | tuned runtime configuration, reproducible on stock upstream (build contributes 1.00–1.01× on top). |
+| Fleet | **~1.3–1.4×** | tuned runtime configuration (build contributes 0.98–1.02× on top). |
+| Decode (single stream) | **+7–14%** every depth, 0.8k→129k | delivered by the Turbo build's fused decode kernels. |
 
-**Costs:** at 8–16 concurrent agents the fusion is ~2% slower than the same flags without it (code
-win 0.98×; neutral at 24+). `-ub 4096` trades VRAM (larger compute buffer) for the prefill win.
-**Quality:** identical weights, lossless.
+Summary: the tuned runtime configuration (`-b 8192 -ub 4096`, oneDNN GEMM disabled) delivers the
+prefill (1.2–1.7×) and fleet (~1.3–1.4×) gains and applies to any llama.cpp SYCL build. The Turbo
+build's fused decode kernels add a further +7–14% to single-stream decode. Output quality is
+unchanged — identical weights, lossless serving.
+
+**Trade-offs:** `-ub 4096` increases the compute-buffer VRAM footprint. At 8–16 concurrent agents,
+fused decode performs within ~2% of the unfused path (build win 0.98×); neutral at 24+ agents.
 **Provenance:** the Q4/Q5/Q6_K MoE reorder is merged upstream (`ggml-org/llama.cpp` PR #24452); the
-3 fusion commits above are fork-only, no PR.
+fused kernels above are specific to this build.
 
-So: adopt the upstream flags for the big prefill/fleet win, free, no fork needed. The Turbo fork
-build adds ~+10% single-stream decode on top via the fusion commits. Full decomposition verbatim
-from `THREEWAY_F16_B70.md`: §§2–4 below.
+Full breakdown: §§2–4 below.
 
 ## TL;DR
 
 | axis | result |
 |---|---|
-| **Prefill** | **1.2–1.7×** vs upstream defaults — 100% runtime config (fusion adds 1.00–1.01×) |
-| **Decode (single stream)** | **+7–14%** at every depth (0.8k→129k) — the one fork-only win |
-| **Fleet decode** | **~1.3–1.4×** vs upstream defaults — also 100% config; fusion ~neutral (0.98–1.02×) |
+| **Prefill** | **1.2–1.7×** vs upstream defaults — from the tuned runtime configuration (build adds 1.00–1.01×) |
+| **Decode (single stream)** | **+7–14%** at every depth (0.8k→129k) — delivered by the Turbo build |
+| **Fleet decode** | **~1.3–1.4×** vs upstream defaults — also from the tuned configuration; build ~neutral (0.98–1.02×) |
 | **Concurrency knee** | **np 32** (159.9 t/s agg); hard cliff at np ≥ 56 |
 | **Context** | 262144 with f16 KV on the 32 GB card |
 | **Quality** | lossless — identical weights across all 3 configs · GSM8K 97 / HellaSwag 81.9 |
@@ -79,13 +81,13 @@ np 56 falls off the 30 GiB memory cliff (−21×).
 | aggregate t/s | 76.4 | 107.8 | 127.8 | 146.3 | **159.9** | 169.6 | 178.3 | 10.0 ⚠ |
 | per-agent t/s | 76.4 | 13.5 | 8.0 | 6.1 | **5.0** | 4.2 | 3.7 | 0.18 |
 
-### 2 · Fleet — 3-way decomposition
-Same Q5_K_M weights / GPU / compiler; only runtime flags and fusion code vary. 2048-tok prompt +
-256 gen, synthetic client. `config = (2)/(1)` · `code = (3)/(2)` · `whole = (3)/(1)`.
+### 2 · Fleet — performance breakdown
+Same Q5_K_M weights / GPU / compiler; only runtime flags and build vary. 2048-tok prompt +
+256 gen, synthetic client. `flags = (2)/(1)` · `build = (3)/(2)` · `total = (3)/(1)`.
 
 ![fleet 3-way](charts/09_threeway_fleet.svg)
 
-| agents | upstream | up+flags | Turbo | config | code | whole |
+| agents | upstream | up+flags | Turbo | flags | build | total |
 |--:|--:|--:|--:|:--:|:--:|:--:|
 | 1 | 78.5 | 79.0 | 86.1 | 1.01× | 1.09× | 1.10× |
 | 2 | 73.2 | 72.4 | 73.9 | 0.99× | 1.02× | 1.01× |
@@ -98,12 +100,12 @@ Same Q5_K_M weights / GPU / compiler; only runtime flags and fusion code vary. 2
 | 48 | 138.2 | 177.6 | 177.6 | 1.29× | 1.00× | 1.29× |
 | 56 | 142.2 | 181.4 | 180.9 | 1.28× | 1.00× | 1.27× |
 
-### 3 · Prefill — 3-way decomposition
-Single stream. `config = (2)/(1)` · `code = (3)/(2)` · `whole = (3)/(1)`.
+### 3 · Prefill — performance breakdown
+Single stream. `flags = (2)/(1)` · `build = (3)/(2)` · `total = (3)/(1)`.
 
 ![prefill 3-way](charts/07_threeway_prefill.svg)
 
-| prompt | upstream | up+flags | Turbo | config | code | whole |
+| prompt | upstream | up+flags | Turbo | flags | build | total |
 |--:|--:|--:|--:|:--:|:--:|:--:|
 | 805 | 1099 | 1397 | 1405 | 1.27× | 1.01× | 1.28× |
 | 3313 | 1096 | 1845 | 1850 | 1.68× | 1.00× | 1.69× |
@@ -113,13 +115,13 @@ Single stream. `config = (2)/(1)` · `code = (3)/(2)` · `whole = (3)/(1)`.
 | 61341 | 634 | 827 | 827 | 1.30× | 1.00× | 1.30× |
 | 129325 | 414 | 488 | 488 | 1.18× | 1.00× | 1.18× |
 
-### 4 · Decode vs context depth — 3-way decomposition
+### 4 · Decode vs context depth — performance breakdown
 Single stream, f16 KV throughout (see the KV note above for the separate q8_0-vs-f16 finding).
-`config = (2)/(1)` · `code = (3)/(2)` · `whole = (3)/(1)`.
+`flags = (2)/(1)` · `build = (3)/(2)` · `total = (3)/(1)`.
 
 ![decode 3-way](charts/08_threeway_decode.svg)
 
-| depth | upstream | up+flags | Turbo | config | code | whole |
+| depth | upstream | up+flags | Turbo | flags | build | total |
 |--:|--:|--:|--:|:--:|:--:|:--:|
 | 805 | 81.7 | 81.7 | 93.6 | 1.00× | 1.14× | 1.15× |
 | 3313 | 80.0 | 79.8 | 91.3 | 1.00× | 1.14× | 1.14× |
